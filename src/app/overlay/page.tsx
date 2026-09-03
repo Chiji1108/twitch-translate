@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CaptionStackEntry } from "@/components/caption-stack-entry";
+import { CaptionStackLine } from "@/components/caption-stack-line";
 import type { FuriganaSegment } from "@/lib/furigana";
 
 const SUBTITLE_STORAGE_KEY = "miri-translator-subtitles-v7";
@@ -27,7 +27,7 @@ type SubtitleState = {
   translationStyles: Record<string, TranslationStyle>;
   alignment: "left" | "center" | "right";
   verticalAlignment: "top" | "center" | "bottom";
-  background: boolean;
+  captionStyle: "simple" | "labeled";
 };
 const initial: SubtitleState = {
   entries: [],
@@ -37,7 +37,7 @@ const initial: SubtitleState = {
   translationStyles: { en: { fontSize: 20, color: "#8ee8c5" } },
   alignment: "center",
   verticalAlignment: "bottom",
-  background: true,
+  captionStyle: "labeled",
 };
 
 function JapaneseText({ entry }: { entry: CaptionEntry }) {
@@ -73,6 +73,25 @@ export default function Overlay() {
     };
   }, []);
 
+  const captionLayoutDependency = JSON.stringify({
+    entries: subtitle.entries.map((entry) => ({
+      id: entry.id,
+      japanese: entry.japanese,
+      translations: subtitle.targets.map(
+        (language) => entry.translations[language] ?? "",
+      ),
+    })),
+    targets: subtitle.targets,
+    alignment: subtitle.alignment,
+    verticalAlignment: subtitle.verticalAlignment,
+    japaneseFontSize: subtitle.japaneseFontSize,
+    captionStyle: subtitle.captionStyle,
+    translationFontSizes: subtitle.targets.map(
+      (language) =>
+        (subtitle.translationStyles[language] ?? { fontSize: 20 }).fontSize,
+    ),
+  });
+
   return (
     <main
       className={`overlay-page vertical-${subtitle.verticalAlignment}`}
@@ -89,16 +108,23 @@ export default function Overlay() {
         {subtitle.entries.map((entry) => {
           if (!entry.japanese) return null;
           return (
-            <CaptionStackEntry
+            <div
               key={entry.id}
-              className={`caption-stack-entry overlay-caption-entry ${subtitle.background ? "with-bg" : ""} ${entry.provisional ? "is-provisional" : ""} ${entry.fading ? "is-fading" : ""}`}
+              className={`caption-stack-entry overlay-caption-entry ${subtitle.captionStyle === "labeled" ? "with-bg" : ""} ${entry.provisional ? "is-provisional" : ""} ${entry.fading ? "is-fading" : ""}`}
             >
-              <div className="caption-line overlay-line source">
-                <span className="overlay-lang-tag">JA</span>
-                <span className="caption-text">
-                  <JapaneseText entry={entry} />
-                </span>
-              </div>
+              <CaptionStackLine
+                className="caption-motion-line"
+                layoutDependency={captionLayoutDependency}
+              >
+                <div className="caption-line overlay-line source">
+                  {subtitle.captionStyle === "labeled" && (
+                    <span className="overlay-lang-tag">JA</span>
+                  )}
+                  <span className="caption-text">
+                    <JapaneseText entry={entry} />
+                  </span>
+                </div>
+              </CaptionStackLine>
               {subtitle.targets.map((language) => {
                 const translation = entry.translations[language];
                 const style = subtitle.translationStyles[language] ?? {
@@ -107,23 +133,30 @@ export default function Overlay() {
                 };
                 if (!translation) return null;
                 return (
-                  <div
+                  <CaptionStackLine
                     key={language}
-                    className="caption-line overlay-line translation"
-                    dir={language === "ar" ? "rtl" : undefined}
-                    style={{
-                      color: style.color,
-                      fontSize: `${style.fontSize}px`,
-                    }}
+                    className="caption-motion-line"
+                    layoutDependency={captionLayoutDependency}
                   >
-                    <span className="overlay-lang-tag">
-                      {language.toUpperCase()}
-                    </span>
-                    <span className="caption-text">{translation}</span>
-                  </div>
+                    <div
+                      className="caption-line overlay-line translation"
+                      dir={language === "ar" ? "rtl" : undefined}
+                      style={{
+                        color: style.color,
+                        fontSize: `${style.fontSize}px`,
+                      }}
+                    >
+                      {subtitle.captionStyle === "labeled" && (
+                        <span className="overlay-lang-tag">
+                          {language.toUpperCase()}
+                        </span>
+                      )}
+                      <span className="caption-text">{translation}</span>
+                    </div>
+                  </CaptionStackLine>
                 );
               })}
-            </CaptionStackEntry>
+            </div>
           );
         })}
       </div>

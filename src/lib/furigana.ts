@@ -207,6 +207,40 @@ function appendPlainSegment(segments: FuriganaSegment[], text: string) {
   }
 }
 
+function trimMatchingTrailingOkurigana(
+  source: string,
+  run: KanjiRun,
+  groups: FuriganaReadingGroup[],
+) {
+  const combinedText = groups.map((group) => group.text).join("");
+  if (combinedText === run.text || !combinedText.startsWith(run.text)) {
+    return groups;
+  }
+
+  const trailingKana = combinedText.slice(run.text.length);
+  const lastGroup = groups.at(-1);
+  if (
+    !trailingKana ||
+    !HIRAGANA_ONLY_PATTERN.test(trailingKana) ||
+    !source.slice(run.end).startsWith(trailingKana) ||
+    !lastGroup?.text.endsWith(trailingKana) ||
+    !lastGroup.reading.endsWith(trailingKana)
+  ) {
+    return groups;
+  }
+
+  const text = lastGroup.text.slice(0, -trailingKana.length);
+  const reading = lastGroup.reading.slice(0, -trailingKana.length);
+  if (!text || !reading || !KANJI_ONLY_PATTERN.test(text)) {
+    return groups;
+  }
+
+  const repaired = [...groups.slice(0, -1), { text, reading }];
+  return repaired.map((group) => group.text).join("") === run.text
+    ? repaired
+    : groups;
+}
+
 export function extractKanjiRuns(source: string): KanjiRun[] {
   return Array.from(source.matchAll(KANJI_RUN_PATTERN), (match, index) => {
     const start = match.index ?? 0;
@@ -260,7 +294,7 @@ export function buildFuriganaSegments(
       };
     }
 
-    const groups: FuriganaReadingGroup[] = [];
+    const rawReadingGroups: FuriganaReadingGroup[] = [];
     for (const rawGroup of rawGroups) {
       if (!rawGroup || typeof rawGroup !== "object") {
         return {
@@ -273,11 +307,13 @@ export function buildFuriganaSegments(
         };
       }
       const group = rawGroup as Record<string, unknown>;
-      groups.push({
+      rawReadingGroups.push({
         text: typeof group.text === "string" ? group.text : "",
         reading: typeof group.reading === "string" ? group.reading : "",
       });
     }
+
+    const groups = trimMatchingTrailingOkurigana(source, run, rawReadingGroups);
 
     if (groups.map((group) => group.text).join("") !== run.text) {
       return {

@@ -3,20 +3,23 @@
 import { motion, useReducedMotion } from "motion/react";
 import type { ReactNode } from "react";
 
-type CaptionStackEntryProps = {
+type CaptionStackLineProps = {
   children: ReactNode;
   className: string;
+  layoutDependency: string;
 };
 
-export function CaptionStackEntry({
+export function CaptionStackLine({
   children,
   className,
-}: CaptionStackEntryProps) {
+  layoutDependency,
+}: CaptionStackLineProps) {
   const reduceMotion = useReducedMotion();
 
   return (
     <motion.div
       layout={reduceMotion ? false : "position"}
+      layoutDependency={layoutDependency}
       transition={{
         layout: { duration: 0.2, ease: [0.22, 1, 0.36, 1] },
       }}

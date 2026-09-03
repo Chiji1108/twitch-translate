@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CaptionStackEntry } from "@/components/caption-stack-entry";
+import { CaptionStackLine } from "@/components/caption-stack-line";
 import type { FuriganaFailureDetails, FuriganaSegment } from "@/lib/furigana";
 import { normalizeJapanesePunctuation } from "@/lib/japanese-text";
 import {
@@ -12,6 +12,7 @@ import {
 type SessionStatus = "idle" | "connecting" | "live" | "error";
 type CaptionAlignment = "left" | "center" | "right";
 type CaptionVerticalAlignment = "top" | "center" | "bottom";
+type CaptionStyle = "simple" | "labeled";
 type TranslationStyle = { fontSize: number; color: string };
 type AppSettings = {
   targets: string[];
@@ -22,7 +23,7 @@ type AppSettings = {
   translationStyles: Record<string, TranslationStyle>;
   alignment: CaptionAlignment;
   verticalAlignment: CaptionVerticalAlignment;
-  background: boolean;
+  captionStyle: CaptionStyle;
   captionHoldMs: number;
 };
 type CaptionEntry = {
@@ -44,7 +45,7 @@ type SubtitleState = {
   translationStyles: Record<string, TranslationStyle>;
   alignment: CaptionAlignment;
   verticalAlignment: CaptionVerticalAlignment;
-  background: boolean;
+  captionStyle: CaptionStyle;
 };
 type CaptionErrorState = {
   message: string;
@@ -181,7 +182,7 @@ function defaultSettings(): AppSettings {
     translationStyles: defaultTranslationStyles(),
     alignment: "center",
     verticalAlignment: "bottom",
-    background: true,
+    captionStyle: "labeled",
     captionHoldMs: DEFAULT_CAPTION_HOLD_MS,
   };
 }
@@ -272,10 +273,9 @@ function parseStoredSettings(value: string | null): AppSettings | null {
       )
         ? (stored.verticalAlignment as CaptionVerticalAlignment)
         : defaults.verticalAlignment,
-      background:
-        typeof stored.background === "boolean"
-          ? stored.background
-          : defaults.background,
+      captionStyle: ["simple", "labeled"].includes(stored.captionStyle ?? "")
+        ? (stored.captionStyle as CaptionStyle)
+        : defaults.captionStyle,
       captionHoldMs: numberInRange(
         stored.captionHoldMs,
         3000,
@@ -640,7 +640,7 @@ export default function Home() {
   const [alignment, setAlignment] = useState<CaptionAlignment>("center");
   const [verticalAlignment, setVerticalAlignment] =
     useState<CaptionVerticalAlignment>("bottom");
-  const [background, setBackground] = useState(true);
+  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("labeled");
   const [captionHoldMs, setCaptionHoldMs] = useState(DEFAULT_CAPTION_HOLD_MS);
   const [context, setContext] = useState("");
   const [sentencePauseMs, setSentencePauseMs] = useState(
@@ -695,7 +695,7 @@ export default function Home() {
         setTranslationStyles(saved.translationStyles);
         setAlignment(saved.alignment);
         setVerticalAlignment(saved.verticalAlignment);
-        setBackground(saved.background);
+        setCaptionStyle(saved.captionStyle);
         setCaptionHoldMs(saved.captionHoldMs);
       }
     } catch {
@@ -716,7 +716,7 @@ export default function Home() {
       translationStyles,
       alignment,
       verticalAlignment,
-      background,
+      captionStyle,
       captionHoldMs,
     };
     try {
@@ -734,7 +734,7 @@ export default function Home() {
     translationStyles,
     alignment,
     verticalAlignment,
-    background,
+    captionStyle,
     captionHoldMs,
   ]);
 
@@ -838,7 +838,7 @@ export default function Home() {
       translationStyles,
       alignment,
       verticalAlignment,
-      background,
+      captionStyle,
     };
     try {
       localStorage.setItem(SUBTITLE_STORAGE_KEY, JSON.stringify(state));
@@ -856,7 +856,7 @@ export default function Home() {
     translationStyles,
     alignment,
     verticalAlignment,
-    background,
+    captionStyle,
   ]);
 
   const stop = useCallback(
@@ -934,7 +934,7 @@ export default function Home() {
     setTranslationStyles(defaults.translationStyles);
     setAlignment(defaults.alignment);
     setVerticalAlignment(defaults.verticalAlignment);
-    setBackground(defaults.background);
+    setCaptionStyle(defaults.captionStyle);
     setCaptionHoldMs(defaults.captionHoldMs);
     try {
       localStorage.removeItem(SETTINGS_STORAGE_KEY);
@@ -1406,6 +1406,24 @@ export default function Home() {
         return "前の字幕を残したまま、次の発話を待っています";
     }
   })();
+  const captionLayoutDependency = JSON.stringify({
+    entries: captionEntries.map((entry) => ({
+      id: entry.id,
+      japanese: entry.japanese,
+      translations: targets.map(
+        (language) => entry.translations[language] ?? "",
+      ),
+    })),
+    targets,
+    alignment,
+    verticalAlignment,
+    japaneseFontSize,
+    captionStyle,
+    translationFontSizes: targets.map(
+      (language) =>
+        (translationStyles[language] ?? DEFAULT_TRANSLATION_STYLES.en).fontSize,
+    ),
+  });
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -1683,7 +1701,7 @@ export default function Home() {
             </span>
           </div>
           <div
-            className={`screen vertical-${verticalAlignment} ${background ? "with-bg" : ""}`}
+            className={`screen vertical-${verticalAlignment} ${captionStyle === "labeled" ? "with-bg" : ""}`}
           >
             <div className="screen-noise" />
             <div className="preview-content">
@@ -1706,19 +1724,26 @@ export default function Home() {
                 {captionEntries.map((entry) => {
                   if (!entry.japanese) return null;
                   return (
-                    <CaptionStackEntry
+                    <div
                       key={entry.id}
                       className={`caption-stack-entry caption-entry ${entry.provisional ? "is-provisional" : ""} ${entry.fading ? "is-fading" : ""}`}
                     >
-                      <div className="caption-line caption japanese">
-                        <span className="lang-tag">JA</span>
-                        <span className="caption-text">
-                          <JapaneseText
-                            text={entry.japanese}
-                            furigana={entry.furigana}
-                          />
-                        </span>
-                      </div>
+                      <CaptionStackLine
+                        className="caption-motion-line"
+                        layoutDependency={captionLayoutDependency}
+                      >
+                        <div className="caption-line caption japanese">
+                          {captionStyle === "labeled" && (
+                            <span className="lang-tag">JA</span>
+                          )}
+                          <span className="caption-text">
+                            <JapaneseText
+                              text={entry.japanese}
+                              furigana={entry.furigana}
+                            />
+                          </span>
+                        </div>
+                      </CaptionStackLine>
                       {targets.map((language) => {
                         const text = entry.translations[language];
                         const style =
@@ -1726,26 +1751,34 @@ export default function Home() {
                           DEFAULT_TRANSLATION_STYLES.en;
                         if (!text) return null;
                         return (
-                          <div
+                          <CaptionStackLine
                             key={language}
-                            className="caption-line caption translated"
-                            dir={language === "ar" ? "rtl" : undefined}
-                            style={{
-                              color: style.color,
-                              fontSize: previewFontSize(style.fontSize),
-                            }}
+                            className="caption-motion-line"
+                            layoutDependency={captionLayoutDependency}
                           >
-                            <span className="lang-tag">
-                              {
-                                LANGUAGES.find((item) => item.code === language)
-                                  ?.short
-                              }
-                            </span>
-                            <span className="caption-text">{text}</span>
-                          </div>
+                            <div
+                              className="caption-line caption translated"
+                              dir={language === "ar" ? "rtl" : undefined}
+                              style={{
+                                color: style.color,
+                                fontSize: previewFontSize(style.fontSize),
+                              }}
+                            >
+                              {captionStyle === "labeled" && (
+                                <span className="lang-tag">
+                                  {
+                                    LANGUAGES.find(
+                                      (item) => item.code === language,
+                                    )?.short
+                                  }
+                                </span>
+                              )}
+                              <span className="caption-text">{text}</span>
+                            </div>
+                          </CaptionStackLine>
                         );
                       })}
-                    </CaptionStackEntry>
+                    </div>
                   );
                 })}
               </div>
@@ -1922,15 +1955,28 @@ export default function Home() {
                 </div>
               </section>
               <section className="caption-setting-group compact-setting-group">
-                <h3>背景</h3>
-                <button
-                  className={`mini-toggle ${background ? "active" : ""}`}
-                  type="button"
-                  aria-pressed={background}
-                  onClick={() => setBackground((value) => !value)}
+                <h3>字幕スタイル</h3>
+                <fieldset
+                  className="alignment-toggle caption-style-toggle"
+                  aria-label="字幕スタイル"
                 >
-                  {background ? "あり" : "なし"}
-                </button>
+                  <button
+                    type="button"
+                    className={captionStyle === "simple" ? "active" : ""}
+                    aria-pressed={captionStyle === "simple"}
+                    onClick={() => setCaptionStyle("simple")}
+                  >
+                    シンプル
+                  </button>
+                  <button
+                    type="button"
+                    className={captionStyle === "labeled" ? "active" : ""}
+                    aria-pressed={captionStyle === "labeled"}
+                    onClick={() => setCaptionStyle("labeled")}
+                  >
+                    ラベル付き
+                  </button>
+                </fieldset>
               </section>
             </div>
             <div className="range-control caption-duration-control">

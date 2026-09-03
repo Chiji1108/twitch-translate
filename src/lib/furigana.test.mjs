@@ -60,6 +60,36 @@ describe("buildFuriganaSegments", () => {
     });
   });
 
+  test("原文直後と一致する送り仮名だけを読み付き漢字列から除去する", () => {
+    expect(
+      buildFuriganaSegments("大好き", {
+        r0: [{ text: "大好き", reading: "だいすき" }],
+      }),
+    ).toEqual({
+      segments: [
+        { text: "大好", reading: "だいす" },
+        { text: "き", reading: null },
+      ],
+      error: null,
+    });
+  });
+
+  test("原文直後と異なるかなは自動補正しない", () => {
+    expect(
+      buildFuriganaSegments("大好み", {
+        r0: [{ text: "大好き", reading: "だいすき" }],
+      }).error?.code,
+    ).toBe("kanji_run_mismatch");
+  });
+
+  test("readingに同じ送り仮名がなければ自動補正しない", () => {
+    expect(
+      buildFuriganaSegments("大好き", {
+        r0: [{ text: "大好き", reading: "だいす" }],
+      }).error?.code,
+    ).toBe("kanji_run_mismatch");
+  });
+
   test("漢字列を変更した読み分けを拒否する", () => {
     expect(
       buildFuriganaSegments("確定文字", {

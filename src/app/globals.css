@@ -1039,6 +1039,17 @@ button {
   max-width: 100%;
   align-items: center;
 }
+.caption-motion-line {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.caption-stack.align-left .caption-motion-line {
+  justify-content: flex-start;
+}
+.caption-stack.align-right .caption-motion-line {
+  justify-content: flex-end;
+}
 .caption-stack.align-left,
 .caption-stack.align-left .caption-stack-entry {
   align-items: flex-start;
@@ -1331,6 +1342,9 @@ button {
   background: white;
   color: #308c6a;
   box-shadow: 0 1px 3px #18251f1a;
+}
+.caption-style-toggle button {
+  min-width: 76px;
 }
 .mini-toggle {
   height: 36px;
