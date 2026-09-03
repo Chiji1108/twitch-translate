@@ -1,0 +1,173 @@
+export const TRANSLATION_LANGUAGES = [
+  {
+    code: "en",
+    name: "英語",
+    short: "EN",
+    promptName: "英語",
+    color: "#8ee8c5",
+  },
+  {
+    code: "ko",
+    name: "韓国語",
+    short: "KO",
+    promptName: "韓国語",
+    color: "#ffd58e",
+  },
+  {
+    code: "zh",
+    name: "中国語（簡体字）",
+    short: "ZH-CN",
+    promptName: "中国語（簡体字・中国本土向け）",
+    color: "#f6a6c1",
+  },
+  {
+    code: "zh-TW",
+    name: "中国語（繁体字・台湾）",
+    short: "ZH-TW",
+    promptName: "中国語（繁体字・台湾で自然な表現）",
+    color: "#ffb6a3",
+  },
+  {
+    code: "zh-HK",
+    name: "中国語（繁体字・香港）",
+    short: "ZH-HK",
+    promptName: "中国語（繁体字・香港で自然な表現）",
+    color: "#ffcf9f",
+  },
+  {
+    code: "es",
+    name: "スペイン語",
+    short: "ES",
+    promptName: "スペイン語",
+    color: "#d7b4ff",
+  },
+  {
+    code: "fr",
+    name: "フランス語",
+    short: "FR",
+    promptName: "フランス語",
+    color: "#9ed8ff",
+  },
+  {
+    code: "de",
+    name: "ドイツ語",
+    short: "DE",
+    promptName: "ドイツ語",
+    color: "#b9d7ff",
+  },
+  {
+    code: "it",
+    name: "イタリア語",
+    short: "IT",
+    promptName: "イタリア語",
+    color: "#a7e2d2",
+  },
+  {
+    code: "pt-BR",
+    name: "ポルトガル語（ブラジル）",
+    short: "PT-BR",
+    promptName: "ブラジルポルトガル語",
+    color: "#bfe59e",
+  },
+  {
+    code: "ru",
+    name: "ロシア語",
+    short: "RU",
+    promptName: "ロシア語",
+    color: "#a9c9ff",
+  },
+  {
+    code: "uk",
+    name: "ウクライナ語",
+    short: "UK",
+    promptName: "ウクライナ語",
+    color: "#a8d9ff",
+  },
+  {
+    code: "pl",
+    name: "ポーランド語",
+    short: "PL",
+    promptName: "ポーランド語",
+    color: "#ffc2cf",
+  },
+  {
+    code: "nl",
+    name: "オランダ語",
+    short: "NL",
+    promptName: "オランダ語",
+    color: "#ffc79c",
+  },
+  {
+    code: "sv",
+    name: "スウェーデン語",
+    short: "SV",
+    promptName: "スウェーデン語",
+    color: "#a9e1ed",
+  },
+  {
+    code: "tr",
+    name: "トルコ語",
+    short: "TR",
+    promptName: "トルコ語",
+    color: "#ffaaa8",
+  },
+  {
+    code: "id",
+    name: "インドネシア語",
+    short: "ID",
+    promptName: "インドネシア語",
+    color: "#b7e6b1",
+  },
+  {
+    code: "vi",
+    name: "ベトナム語",
+    short: "VI",
+    promptName: "ベトナム語",
+    color: "#ffd2a8",
+  },
+  {
+    code: "th",
+    name: "タイ語",
+    short: "TH",
+    promptName: "タイ語",
+    color: "#e0b7ff",
+  },
+  {
+    code: "ar",
+    name: "アラビア語",
+    short: "AR",
+    promptName: "現代標準アラビア語",
+    color: "#c8e0a6",
+  },
+  {
+    code: "hi",
+    name: "ヒンディー語",
+    short: "HI",
+    promptName: "ヒンディー語",
+    color: "#ffc59e",
+  },
+  {
+    code: "el",
+    name: "ギリシャ語",
+    short: "EL",
+    promptName: "ギリシャ語",
+    color: "#b6c8ff",
+  },
+  {
+    code: "so",
+    name: "ソマリ語",
+    short: "SO",
+    promptName: "ソマリ語",
+    color: "#b0e3ca",
+  },
+] as const;
+
+export const MAX_TRANSLATION_LANGUAGES = 3;
+
+export const TRANSLATION_LANGUAGE_CODES = new Set<string>(
+  TRANSLATION_LANGUAGES.map(({ code }) => code),
+);
+
+export const TRANSLATION_LANGUAGE_NAMES = Object.fromEntries(
+  TRANSLATION_LANGUAGES.map(({ code, promptName }) => [code, promptName]),
+) as Record<string, string>;

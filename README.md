@@ -1,36 +1,80 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Miri Translator by ミリちゃんねる
 
-## Getting Started
+日本語のライブ配信向けの、音声認識＋多言語翻訳字幕アプリです。ゲーム、雑談、VTuberなど、TwitchやYouTubeのさまざまな配信で利用できます。一文の音声をOpenAIの `gpt-transcribe` で高精度に文字起こしし、その日本語からFast modeの `gpt-5.6-luna` が最大3言語の翻訳とふりがなを独立した並列リクエストで生成します。
 
-First, run the development server:
+マイク使用中は `gpt-live-transcribe` を常時接続し、完成字幕が一切ないときだけTTFT短縮用の仮日本語をストリーミング表示します。表示した仮日本語はその文の完成字幕が揃うまで固定し、次の発話の仮日本語へは進めません。完成字幕がある間は前の字幕を表示し続け、次の日本語・翻訳・ふりがながすべて揃ったときだけ字幕全体を切り替えます。仮日本語は表示専用で、確定処理には使用しません。
+
+## セットアップ
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
+bun install
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+[http://localhost:3000](http://localhost:3000) を開き、画面最上部の入力欄に自分のOpenAI API Keyを入力してから「マイクを開始」を押してください。ブラウザがマイク利用の許可を求めた場合は許可します。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+APIキーは通常、タブのメモリ上だけに保持し、ページを更新すると消去されます。「このブラウザにAPIキーを保存」を有効にした場合だけ、そのブラウザの `localStorage` に保存して次回アクセス時に自動入力します。チェックを外すと保存済みキーを削除します。共有端末では保存機能を使用しないでください。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+キーは暗号化通信でMiri Translatorのサーバーを経由し、OpenAI APIへのリクエストにのみ使用します。Cookie、データベース、字幕同期データ、URLには保存せず、API料金は入力したキーのOpenAIアカウントに請求されます。
 
-## Learn More
+## OBSで使う
 
-To learn more about Next.js, take a look at the following resources:
+1. アプリを開いたまま字幕を開始します。
+2. OBSで「ブラウザ」ソースを追加します。
+3. URLに `http://localhost:3000/overlay` を設定します。
+4. 幅 `800`、高さ `400` を目安に設定します。字幕が切れる場合は高さや幅を広げてください。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+メイン画面で日本語・翻訳それぞれの文字サイズと文字色、中央／左寄せ、背景、表示時間を設定できます。オーバーレイとは `BroadcastChannel` と `localStorage` で同期するため、同じPC上で利用してください。
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 字幕フロー
 
-## Deploy on Vercel
+1. マイク開始時に `gpt-live-transcribe` のRealtime文字起こしセッションへ接続します。
+2. マイク音声を常時ストリーミングし、完成字幕が一切ないときだけ仮日本語を表示します。
+3. 設定した無音時間で一文を区切り、WAV音声を `/api/captions` へ送ります。
+4. `gpt-transcribe` が任意の配信コンテキストを参考に、日本語字幕を生成します。
+5. Fast modeの `gpt-5.6-luna` が、選択した最大3言語を1言語1リクエストで並列翻訳します。各翻訳は通常テキストのdelta単位で表示へ反映します。
+6. 翻訳と同時に、別のLunaリクエストがふりがなの読みを生成します。
+7. サーバーが原文とふりがなの対応を検証し、完成したふりがなを表示へ反映します。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+音声ターンは順番に処理します。次の字幕パッケージが完成するまで、現在の字幕は消去・途中更新されません。ただし「自動で字幕を消す」が有効で、処理待ちもない場合は設定時間後にフェードアウトします。
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+一瞬の物音はブラウザ側で除外します。また、送信した音声に文字として認識できる発話がなく `gpt-transcribe` が空文字を返した場合は正常な無音ターンとしてスキップし、エラーを表示せず現在の字幕を維持します。
+
+## モデル構成
+
+- `gpt-transcribe`: 一文の高精度な日本語文字起こし
+- `gpt-5.6-luna`（Fast mode）: 日本語字幕から各言語の翻訳とふりがなの読みを独立したリクエストで並列生成
+- `gpt-live-transcribe`: マイク使用中に常時接続し、空画面だけに表示する仮日本語を生成
+- Browser VAD: ローカルのマイク音量から一文を区切る
+- Next.js Route Handler: 利用者が入力したOpenAI APIキーを保存せず、OpenAI APIへのリクエストだけに使用
+
+`gpt-live-transcribe` の出力はTTFT短縮用の表示レイヤーに限定され、`gpt-transcribe`、翻訳、ふりがな、履歴には渡しません。Realtime接続に失敗しても字幕生成パイプラインは継続します。`gpt-realtime-translate` と `gpt-realtime-2.1-mini` は使用しません。API料金は、マイク使用中のLive文字起こし音声、字幕用に送った発話音声、Lunaの入出力トークンに応じて発生します。
+
+## 配信コンテキスト
+
+「配信コンテキスト」には、配信のテーマ、扱う作品、登場人物、固有名詞など、その配信に関係する情報を任意で入力できます。入力内容は仮日本語、高精度な日本語字幕、翻訳のすべてで背景情報として利用します。空欄でも字幕を生成できます。
+
+## ふりがな
+
+アプリが日本語字幕から連続漢字列と位置を抽出します。翻訳とは独立したLunaのStructured Outputs応答が、話し言葉や配信コンテキストに沿った語境界と読みを返します。
+
+サーバー側で各語を連結して元の漢字列と完全一致することを検証し、原文そのものは決定論的に組み立てます。検証に失敗した場合は古い完成字幕を維持し、画面へ詳細なエラー情報を表示します。
+
+## コマンド
+
+```bash
+bun run lint
+bunx tsc --noEmit
+bun test
+bun run build
+```
+
+## 参考
+
+- [OpenAI GPT-Transcribe](https://developers.openai.com/api/docs/models/gpt-transcribe)
+- [OpenAI GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna)
+- [OpenAI Fast mode](https://developers.openai.com/api/docs/guides/fast-mode)
+- [OpenAI GPT-Live-Transcribe](https://developers.openai.com/api/docs/models/gpt-live-transcribe)
+- [OpenAI Realtime Transcription](https://developers.openai.com/api/docs/guides/realtime-transcription)
+- [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+- [音声認識字幕ちゃん](https://sayonari.github.io/jimakuChan/v2/)
