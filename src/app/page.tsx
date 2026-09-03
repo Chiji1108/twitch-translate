@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CaptionStackEntry } from "@/components/caption-stack-entry";
 import type { FuriganaFailureDetails, FuriganaSegment } from "@/lib/furigana";
 import { normalizeJapanesePunctuation } from "@/lib/japanese-text";
 import {
@@ -1705,7 +1706,7 @@ export default function Home() {
                 {captionEntries.map((entry) => {
                   if (!entry.japanese) return null;
                   return (
-                    <div
+                    <CaptionStackEntry
                       key={entry.id}
                       className={`caption-stack-entry caption-entry ${entry.provisional ? "is-provisional" : ""} ${entry.fading ? "is-fading" : ""}`}
                     >
@@ -1744,7 +1745,7 @@ export default function Home() {
                           </div>
                         );
                       })}
-                    </div>
+                    </CaptionStackEntry>
                   );
                 })}
               </div>

@@ -1086,11 +1086,17 @@ button {
 }
 .caption rt,
 .overlay-line rt {
+  animation: furigana-fade-in 200ms ease-out both;
   color: inherit;
   font-size: 0.45em;
   font-weight: 700;
   letter-spacing: 0.03em;
   text-shadow: inherit;
+}
+@keyframes furigana-fade-in {
+  from {
+    opacity: 0;
+  }
 }
 .lang-tag {
   flex: none;
@@ -1497,6 +1503,10 @@ footer a {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .caption rt,
+  .overlay-line rt {
+    animation: none;
+  }
   .caption-entry,
   .overlay-caption-entry,
   .caption-entry.is-fading,

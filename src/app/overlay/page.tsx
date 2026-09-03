@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CaptionStackEntry } from "@/components/caption-stack-entry";
 import type { FuriganaSegment } from "@/lib/furigana";
 
 const SUBTITLE_STORAGE_KEY = "miri-translator-subtitles-v7";
@@ -88,7 +89,7 @@ export default function Overlay() {
         {subtitle.entries.map((entry) => {
           if (!entry.japanese) return null;
           return (
-            <div
+            <CaptionStackEntry
               key={entry.id}
               className={`caption-stack-entry overlay-caption-entry ${subtitle.background ? "with-bg" : ""} ${entry.provisional ? "is-provisional" : ""} ${entry.fading ? "is-fading" : ""}`}
             >
@@ -122,7 +123,7 @@ export default function Overlay() {
                   </div>
                 );
               })}
-            </div>
+            </CaptionStackEntry>
           );
         })}
       </div>
