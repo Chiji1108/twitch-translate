@@ -8,6 +8,15 @@ import {
   MAX_TRANSLATION_LANGUAGES,
   TRANSLATION_LANGUAGES,
 } from "@/lib/languages";
+import {
+  addCaptionUsage,
+  addLiveTranscriptionUsage,
+  type CaptionUsagePayload,
+  emptySessionUsage,
+  estimateSessionCost,
+  formatEstimatedUsd,
+  type OpenAIUsage,
+} from "@/lib/usage-cost";
 
 type SessionStatus = "idle" | "connecting" | "live" | "error";
 type CaptionAlignment = "left" | "center" | "right";
@@ -79,6 +88,7 @@ type CaptionStreamEvent = {
   reason?: string;
   error?: string;
   details?: CaptionPipelineErrorDetails;
+  usage?: CaptionUsagePayload;
 };
 type RealtimeTranscriptionPeer = {
   connection: RTCPeerConnection;
@@ -89,6 +99,7 @@ type RealtimeTranscriptionEvent = {
   item_id?: string;
   delta?: string;
   transcript?: string;
+  usage?: OpenAIUsage;
   error?: { message?: string };
 };
 const LANGUAGES = TRANSLATION_LANGUAGES;
@@ -354,12 +365,14 @@ async function createRealtimeTranscriptionPeer({
   context,
   signal,
   onTranscript,
+  onUsage,
 }: {
   audioTrack: MediaStreamTrack;
   apiKey: string;
   context: string;
   signal: AbortSignal;
   onTranscript: (itemId: string, transcript: string) => void;
+  onUsage: (usage: OpenAIUsage) => void;
 }) {
   const secretResponse = await fetch("/api/realtime-transcription-session", {
     method: "POST",
@@ -408,6 +421,7 @@ async function createRealtimeTranscriptionPeer({
         ) {
           transcripts.set(event.item_id, event.transcript);
           onTranscript(event.item_id, event.transcript);
+          if (event.usage) onUsage(event.usage);
         } else if (event.type === "error") {
           console.warn(
             "Realtime transcription event:",
@@ -653,6 +667,10 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [hasCostSession, setHasCostSession] = useState(false);
+  const [sessionUsage, setSessionUsage] = useState(emptySessionUsage);
+  const [liveConnectionSeconds, setLiveConnectionSeconds] = useState(0);
+  const [trackingRealtimeCost, setTrackingRealtimeCost] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const vadFrameRef = useRef<number | null>(null);
@@ -670,6 +688,7 @@ export default function Home() {
   const realtimeSpeechInBufferRef = useRef(false);
   const realtimeItemTurnMapRef = useRef(new Map<string, number>());
   const pendingRealtimeTurnIdsRef = useRef<number[]>([]);
+  const realtimeCostStartedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     try {
@@ -791,6 +810,26 @@ export default function Home() {
   }, [sentencePauseMs]);
 
   useEffect(() => {
+    if (!trackingRealtimeCost) return;
+    const updateElapsedTime = () => {
+      const startedAt = realtimeCostStartedAtRef.current;
+      if (startedAt === null) return;
+      setLiveConnectionSeconds((performance.now() - startedAt) / 1000);
+    };
+    updateElapsedTime();
+    const timer = window.setInterval(updateElapsedTime, 500);
+    return () => window.clearInterval(timer);
+  }, [trackingRealtimeCost]);
+
+  const recordLiveUsage = useCallback((usage: OpenAIUsage) => {
+    setSessionUsage((current) => addLiveTranscriptionUsage(current, usage));
+  }, []);
+
+  const recordCaptionUsage = useCallback((usage?: CaptionUsagePayload) => {
+    setSessionUsage((current) => addCaptionUsage(current, usage));
+  }, []);
+
+  useEffect(() => {
     if (showingDemo) return;
     const now = Date.now();
     const timers: number[] = [];
@@ -861,6 +900,14 @@ export default function Home() {
 
   const stop = useCallback(
     (restoreDemo = false) => {
+      const realtimeCostStartedAt = realtimeCostStartedAtRef.current;
+      if (realtimeCostStartedAt !== null) {
+        setLiveConnectionSeconds(
+          (performance.now() - realtimeCostStartedAt) / 1000,
+        );
+      }
+      realtimeCostStartedAtRef.current = null;
+      setTrackingRealtimeCost(false);
       pipelineGenerationRef.current += 1;
       activeRequestRef.current?.abort();
       closeRealtimeTranscription();
@@ -950,6 +997,9 @@ export default function Home() {
       return;
     }
     stop();
+    setHasCostSession(true);
+    setSessionUsage(emptySessionUsage());
+    setLiveConnectionSeconds(0);
     setStatus("connecting");
     setError("");
     if (showingDemo) {
@@ -1014,6 +1064,12 @@ export default function Home() {
             let turnFinished = false;
 
             const handleEvent = (event: CaptionStreamEvent) => {
+              if (
+                (event.type === "completed" || event.type === "skipped") &&
+                event.usage
+              ) {
+                recordCaptionUsage(event.usage);
+              }
               if (event.type === "progress" && event.stage) {
                 setProcessingStage(event.stage);
                 return;
@@ -1227,6 +1283,7 @@ export default function Home() {
             context: context.trim(),
             signal: realtimeController.signal,
             onTranscript: updateProvisionalJapanese,
+            onUsage: recordLiveUsage,
           });
           if (generation !== pipelineGenerationRef.current) {
             peer.events.close();
@@ -1234,6 +1291,8 @@ export default function Home() {
             return;
           }
           realtimeTranscriptionRef.current = peer;
+          realtimeCostStartedAtRef.current = performance.now();
+          setTrackingRealtimeCost(true);
           realtimeCommitTimerRef.current = window.setInterval(() => {
             if (!realtimeSpeechInBufferRef.current) {
               commitRealtimeTranscription();
@@ -1372,6 +1431,7 @@ export default function Home() {
 
   const isLive = status === "live" || status === "connecting";
   const hasApiKey = apiKey.trim().length >= 20;
+  const sessionCosts = estimateSessionCost(sessionUsage, liveConnectionSeconds);
   const normalizedLanguageQuery = languageQuery.trim().toLocaleLowerCase();
   const visibleLanguageOptions = [...LANGUAGES]
     .sort(
@@ -1442,8 +1502,7 @@ export default function Home() {
           <span className="beta">BETA</span>
         </a>
         <div className="model-pill">
-          <span className="model-dot" /> GPT-Live-Transcribe + GPT-Transcribe +
-          Luna
+          <span className="model-dot" /> GPT-Live-Transcribe + GPT-Transcribe
         </div>
       </header>
 
@@ -1671,6 +1730,32 @@ export default function Home() {
               </small>
             </span>
           </button>
+          {hasCostSession && (
+            <section className="session-cost" aria-label="今回の推定API料金">
+              <div className="session-cost-total">
+                <span>
+                  今回の推定料金
+                  <small>{isLive ? "計測中" : "停止時点"}</small>
+                </span>
+                <strong>{formatEstimatedUsd(sessionCosts.total)}</strong>
+              </div>
+              <dl>
+                <div>
+                  <dt>Live文字起こし</dt>
+                  <dd>{formatEstimatedUsd(sessionCosts.liveTranscription)}</dd>
+                </div>
+                <div>
+                  <dt>高精度文字起こし</dt>
+                  <dd>{formatEstimatedUsd(sessionCosts.transcription)}</dd>
+                </div>
+                <div>
+                  <dt>翻訳・ふりがな</dt>
+                  <dd>{formatEstimatedUsd(sessionCosts.terra)}</dd>
+                </div>
+              </dl>
+              <p>APIの使用量から算出した概算です</p>
+            </section>
+          )}
           {error && (
             <div className="error-box">
               {error}
@@ -2056,7 +2141,7 @@ export default function Home() {
       <footer>
         <span>MIRI TRANSLATOR by ミリちゃんねる · FOR JAPANESE STREAMERS</span>
         <a
-          href="https://developers.openai.com/api/docs/models/gpt-5.6-luna"
+          href="https://developers.openai.com/api/docs/models/gpt-5.6-terra"
           target="_blank"
           rel="noreferrer"
         >

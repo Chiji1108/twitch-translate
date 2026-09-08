@@ -118,7 +118,7 @@ async function generateTranslation(
     const responseStream = openai.chat.completions.stream(
       {
         model: CAPTION_MODEL,
-        service_tier: "fast",
+        service_tier: "default",
         reasoning_effort: "none",
         verbosity: "low",
         messages: [
@@ -272,7 +272,7 @@ async function generateFurigana(
       .parse(
         {
           model: CAPTION_MODEL,
-          service_tier: "fast",
+          service_tier: "default",
           reasoning_effort: "none",
           verbosity: "low",
           messages: [
@@ -425,6 +425,7 @@ async function createCaptionResponse(
   reportUpdate({ type: "progress", stage: "transcribing" });
   let japanese: string;
   let transcriptionRequestId: string | undefined;
+  let transcriptionUsage: unknown;
   try {
     const { data, request_id } = await openai.audio.transcriptions
       .create(
@@ -440,6 +441,7 @@ async function createCaptionResponse(
       .withResponse();
     japanese = normalizeJapanesePunctuation(data.text.trim()).slice(0, 500);
     transcriptionRequestId = request_id ?? undefined;
+    transcriptionUsage = data.usage;
     const transcriptionMs = performance.now() - transcriptionStartedAt;
     if (!japanese) {
       return Response.json(
@@ -448,6 +450,7 @@ async function createCaptionResponse(
           reason: "no_speech",
           model: "gpt-transcribe",
           requestId: transcriptionRequestId,
+          usage: { transcription: transcriptionUsage },
           timings: { transcriptionMs },
         },
         { headers: { "Cache-Control": "no-store" } },
@@ -563,8 +566,9 @@ async function createCaptionResponse(
         ),
         furigana: furiganaTask.responseId,
       },
-      serviceTier: serviceTiers.includes("default") ? "default" : "fast",
+      serviceTier: serviceTiers[0] ?? "default",
       usage: {
+        transcription: transcriptionUsage,
         translations: Object.fromEntries(
           translationTasks.map(({ language, usage }) => [language, usage]),
         ),

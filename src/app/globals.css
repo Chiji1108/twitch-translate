@@ -933,6 +933,68 @@ button {
   line-height: 1.45;
   text-align: left;
 }
+.session-cost {
+  margin: 0 24px 16px;
+  padding: 12px 14px 11px;
+  border: 1px solid #d9dfdb;
+  border-radius: 10px;
+  background: rgba(247, 249, 246, 0.86);
+  color: #4f5d58;
+}
+.session-cost-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.session-cost-total > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.session-cost-total small {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #e6eee9;
+  color: #71807a;
+  font-size: 7px;
+  letter-spacing: 0.03em;
+}
+.session-cost-total strong {
+  color: #24483b;
+  font: 700 16px var(--font-geist);
+  letter-spacing: -0.02em;
+}
+.session-cost dl {
+  margin: 10px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid #e1e5e2;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.session-cost dl div {
+  min-width: 0;
+}
+.session-cost dt {
+  overflow: hidden;
+  color: #8a9591;
+  font-size: 8px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.session-cost dd {
+  margin: 3px 0 0;
+  color: #56655f;
+  font: 650 9px var(--font-geist);
+}
+.session-cost p {
+  margin: 8px 0 0;
+  color: #9aa39f;
+  font-size: 7px;
+}
 .error-box {
   margin: 0 24px 16px;
   padding: 10px 12px;

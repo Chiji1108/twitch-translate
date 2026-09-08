@@ -3,7 +3,7 @@ export type FuriganaSegment = {
   reading: string | null;
 };
 
-export const CAPTION_MODEL = "gpt-5.6-luna";
+export const CAPTION_MODEL = "gpt-5.6-terra";
 
 export type KanjiRun = {
   key: string;
