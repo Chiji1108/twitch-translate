@@ -18,16 +18,16 @@ export type CaptionUsagePayload = {
 export type SessionUsage = {
   liveAudioSeconds: number;
   transcriptionAudioSeconds: number;
-  terraInputTokens: number;
-  terraCachedInputTokens: number;
-  terraOutputTokens: number;
+  captionInputTokens: number;
+  captionCachedInputTokens: number;
+  captionOutputTokens: number;
 };
 
 const GPT_LIVE_TRANSCRIBE_USD_PER_MINUTE = 0.017;
 const GPT_TRANSCRIBE_USD_PER_MINUTE = 0.0045;
-const TERRA_INPUT_USD_PER_MILLION_TOKENS = 2;
-const TERRA_CACHED_INPUT_USD_PER_MILLION_TOKENS = 0.2;
-const TERRA_OUTPUT_USD_PER_MILLION_TOKENS = 12;
+const CAPTION_INPUT_USD_PER_MILLION_TOKENS = 0.2;
+const CAPTION_CACHED_INPUT_USD_PER_MILLION_TOKENS = 0.02;
+const CAPTION_OUTPUT_USD_PER_MILLION_TOKENS = 1.2;
 
 function nonNegative(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value > 0
@@ -39,9 +39,9 @@ export function emptySessionUsage(): SessionUsage {
   return {
     liveAudioSeconds: 0,
     transcriptionAudioSeconds: 0,
-    terraInputTokens: 0,
-    terraCachedInputTokens: 0,
-    terraOutputTokens: 0,
+    captionInputTokens: 0,
+    captionCachedInputTokens: 0,
+    captionOutputTokens: 0,
   };
 }
 
@@ -55,7 +55,7 @@ export function addLiveTranscriptionUsage(
   };
 }
 
-function addTerraUsage(current: SessionUsage, usage?: OpenAIUsage) {
+function addCaptionModelUsage(current: SessionUsage, usage?: OpenAIUsage) {
   if (!usage) return current;
   const inputTokens = nonNegative(usage.prompt_tokens ?? usage.input_tokens);
   const cachedInputTokens = Math.min(
@@ -67,10 +67,11 @@ function addTerraUsage(current: SessionUsage, usage?: OpenAIUsage) {
   );
   return {
     ...current,
-    terraInputTokens: current.terraInputTokens + inputTokens,
-    terraCachedInputTokens: current.terraCachedInputTokens + cachedInputTokens,
-    terraOutputTokens:
-      current.terraOutputTokens +
+    captionInputTokens: current.captionInputTokens + inputTokens,
+    captionCachedInputTokens:
+      current.captionCachedInputTokens + cachedInputTokens,
+    captionOutputTokens:
+      current.captionOutputTokens +
       nonNegative(usage.completion_tokens ?? usage.output_tokens),
   };
 }
@@ -86,9 +87,9 @@ export function addCaptionUsage(
       current.transcriptionAudioSeconds +
       nonNegative(usage.transcription?.seconds),
   };
-  next = addTerraUsage(next, usage.furigana);
+  next = addCaptionModelUsage(next, usage.furigana);
   for (const translationUsage of Object.values(usage.translations ?? {})) {
-    next = addTerraUsage(next, translationUsage);
+    next = addCaptionModelUsage(next, translationUsage);
   }
   return next;
 }
@@ -103,23 +104,24 @@ export function estimateSessionCost(
   );
   const uncachedInputTokens = Math.max(
     0,
-    usage.terraInputTokens - usage.terraCachedInputTokens,
+    usage.captionInputTokens - usage.captionCachedInputTokens,
   );
   const liveTranscription =
     (liveSeconds / 60) * GPT_LIVE_TRANSCRIBE_USD_PER_MINUTE;
   const transcription =
     (usage.transcriptionAudioSeconds / 60) * GPT_TRANSCRIBE_USD_PER_MINUTE;
-  const terra =
-    (uncachedInputTokens / 1_000_000) * TERRA_INPUT_USD_PER_MILLION_TOKENS +
-    (usage.terraCachedInputTokens / 1_000_000) *
-      TERRA_CACHED_INPUT_USD_PER_MILLION_TOKENS +
-    (usage.terraOutputTokens / 1_000_000) * TERRA_OUTPUT_USD_PER_MILLION_TOKENS;
+  const captionGeneration =
+    (uncachedInputTokens / 1_000_000) * CAPTION_INPUT_USD_PER_MILLION_TOKENS +
+    (usage.captionCachedInputTokens / 1_000_000) *
+      CAPTION_CACHED_INPUT_USD_PER_MILLION_TOKENS +
+    (usage.captionOutputTokens / 1_000_000) *
+      CAPTION_OUTPUT_USD_PER_MILLION_TOKENS;
 
   return {
     liveTranscription,
     transcription,
-    terra,
-    total: liveTranscription + transcription + terra,
+    captionGeneration,
+    total: liveTranscription + transcription + captionGeneration,
   };
 }
 

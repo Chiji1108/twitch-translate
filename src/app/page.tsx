@@ -1461,7 +1461,7 @@ export default function Home() {
                 </div>
                 <div>
                   <dt>翻訳・ふりがな</dt>
-                  <dd>{formatEstimatedUsd(sessionCosts.terra)}</dd>
+                  <dd>{formatEstimatedUsd(sessionCosts.captionGeneration)}</dd>
                 </div>
               </dl>
               <p>APIの使用量から算出した概算です</p>
@@ -1764,7 +1764,7 @@ export default function Home() {
       <footer>
         <span>MIRI TRANSLATOR by ミリちゃんねる · FOR JAPANESE STREAMERS</span>
         <a
-          href="https://developers.openai.com/api/docs/models/gpt-5.6-terra"
+          href="https://developers.openai.com/api/docs/models/gpt-5.6-luna"
           target="_blank"
           rel="noreferrer"
         >

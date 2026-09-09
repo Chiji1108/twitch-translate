@@ -1,6 +1,6 @@
 # Miri Translator by ミリちゃんねる
 
-日本語のライブ配信向けの、音声認識＋多言語翻訳字幕アプリです。ゲーム、雑談、VTuberなど、TwitchやYouTubeのさまざまな配信で利用できます。一文の音声をOpenAIの `gpt-transcribe` で高精度に文字起こしし、その日本語から通常処理の `gpt-5.6-terra` が最大3言語の翻訳とふりがなを独立した並列リクエストで生成します。
+日本語のライブ配信向けの、音声認識＋多言語翻訳字幕アプリです。ゲーム、雑談、VTuberなど、TwitchやYouTubeのさまざまな配信で利用できます。一文の音声をOpenAIの `gpt-transcribe` で高精度に文字起こしし、その日本語から通常処理の `gpt-5.6-luna` が最大3言語の翻訳とふりがなを独立した並列リクエストで生成します。
 
 マイク使用中は `gpt-live-transcribe` を常時接続し、完成字幕が一切ないときだけTTFT短縮用の仮日本語をストリーミング表示します。
 
@@ -32,8 +32,8 @@ APIキーは通常、タブのメモリ上だけに保持し、ページを更�
 2. マイク音声を常時ストリーミングし、完成字幕が一切ないときだけ仮日本語を表示します。
 3. AudioWorkletが設定した無音時間で一文を区切り、WAV音声を `/api/captions` へ送ります。
 4. `gpt-transcribe` が任意の配信コンテキストを参考に、日本語字幕を生成します。
-5. 通常処理の `gpt-5.6-terra` が、選択した最大3言語を1言語1リクエストで並列翻訳します。各翻訳は通常テキストのdelta単位で表示へ反映します。
-6. 翻訳と同時に、別のTerraリクエストがふりがなの読みを生成します。
+5. 通常処理の `gpt-5.6-luna` が、選択した最大3言語を1言語1リクエストで並列翻訳します。各翻訳は通常テキストのdelta単位で表示へ反映します。
+6. 翻訳と同時に、別のLunaリクエストがふりがなの読みを生成します。
 7. サーバーが原文とふりがなの対応を検証し、完成したふりがなを表示へ反映します。
 
 音声ターンは順番に処理します。次の字幕パッケージが完成するまで、現在の字幕は消去・途中更新されません。ただし「自動で字幕を消す」が有効で、処理待ちもない場合は設定時間後にフェードアウトします。
@@ -43,12 +43,12 @@ APIキーは通常、タブのメモリ上だけに保持し、ページを更�
 ## モデル構成
 
 - `gpt-transcribe`: 一文の高精度な日本語文字起こし
-- `gpt-5.6-terra`（通常処理）: 日本語字幕から各言語の翻訳とふりがなの読みを独立したリクエストで並列生成
+- `gpt-5.6-luna`（通常処理）: 日本語字幕から各言語の翻訳とふりがなの読みを独立したリクエストで並列生成
 - `gpt-live-transcribe`: マイク使用中に常時接続し、空画面だけに表示する仮日本語を生成
 - AudioWorklet VAD: 描画ループに依存せず、ローカルのマイク音量から一文を区切る
 - Next.js Route Handler: 利用者が入力したOpenAI APIキーを保存せず、OpenAI APIへのリクエストだけに使用
 
-`gpt-live-transcribe` の出力はTTFT短縮用の表示レイヤーに限定され、`gpt-transcribe`、翻訳、ふりがな、履歴には渡しません。Realtime接続に失敗しても字幕生成パイプラインは継続します。`gpt-realtime-translate` と `gpt-realtime-2.1-mini` は使用しません。API料金は、マイク使用中のLive文字起こし音声、字幕用に送った発話音声、Terraの入出力トークンに応じて発生します。
+`gpt-live-transcribe` の出力はTTFT短縮用の表示レイヤーに限定され、`gpt-transcribe`、翻訳、ふりがな、履歴には渡しません。Realtime接続に失敗しても字幕生成パイプラインは継続します。`gpt-realtime-translate` と `gpt-realtime-2.1-mini` は使用しません。API料金は、マイク使用中のLive文字起こし音声、字幕用に送った発話音声、Lunaの入出力トークンに応じて発生します。
 
 マイク開始から停止まで、各APIレスポンスの使用量とLive文字起こしの接続時間を基に、今回の推定料金とモデル別の内訳を画面に表示します。中断されたリクエストや請求時の丸めによって実際の請求額と差が生じる可能性があるため、表示額は概算です。
 
@@ -58,7 +58,7 @@ APIキーは通常、タブのメモリ上だけに保持し、ページを更�
 
 ## ふりがな
 
-アプリが日本語字幕から連続漢字列と位置を抽出します。翻訳とは独立したTerraのStructured Outputs応答が、話し言葉や配信コンテキストに沿った語境界と読みを返します。
+アプリが日本語字幕から連続漢字列と位置を抽出します。翻訳とは独立したLunaのStructured Outputs応答が、話し言葉や配信コンテキストに沿った語境界と読みを返します。
 
 サーバー側で各語を連結して元の漢字列と完全一致することを検証し、原文そのものは決定論的に組み立てます。検証に失敗した場合は古い完成字幕を維持し、画面へ詳細なエラー情報を表示します。
 
@@ -74,7 +74,7 @@ bun run build
 ## 参考
 
 - [OpenAI GPT-Transcribe](https://developers.openai.com/api/docs/models/gpt-transcribe)
-- [OpenAI GPT-5.6 Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra)
+- [OpenAI GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna)
 - [OpenAI GPT-Live-Transcribe](https://developers.openai.com/api/docs/models/gpt-live-transcribe)
 - [OpenAI Realtime Transcription](https://developers.openai.com/api/docs/guides/realtime-transcription)
 - [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)

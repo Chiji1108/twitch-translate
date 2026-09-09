@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   buildFuriganaSegments,
   CAPTION_MODEL,
+  CAPTION_SERVICE_TIER,
   extractKanjiRuns,
 } from "@/lib/furigana";
 import { normalizeJapanesePunctuation } from "@/lib/japanese-text";
@@ -118,7 +119,7 @@ async function generateTranslation(
     const responseStream = openai.responses.stream(
       {
         model: CAPTION_MODEL,
-        service_tier: "default",
+        service_tier: CAPTION_SERVICE_TIER,
         reasoning: { effort: "none" },
         text: { verbosity: "low" },
         instructions,
@@ -262,7 +263,7 @@ async function generateFurigana(
       .parse(
         {
           model: CAPTION_MODEL,
-          service_tier: "default",
+          service_tier: CAPTION_SERVICE_TIER,
           reasoning: { effort: "none" },
           text: {
             verbosity: "low",
@@ -555,7 +556,7 @@ async function createCaptionResponse(
         ),
         furigana: furiganaTask.responseId,
       },
-      serviceTier: serviceTiers[0] ?? "default",
+      serviceTier: serviceTiers[0] ?? CAPTION_SERVICE_TIER,
       usage: {
         transcription: transcriptionUsage,
         translations: Object.fromEntries(

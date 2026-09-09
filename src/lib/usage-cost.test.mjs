@@ -8,7 +8,7 @@ import {
 } from "./usage-cost.ts";
 
 describe("usage cost", () => {
-  test("音声時間とTerraのトークンをモデル別に集計する", () => {
+  test("音声時間と字幕生成モデルのトークンをモデル別に集計する", () => {
     let usage = addLiveTranscriptionUsage(emptySessionUsage(), {
       type: "duration",
       seconds: 60,
@@ -28,14 +28,14 @@ describe("usage cost", () => {
     expect(usage).toEqual({
       liveAudioSeconds: 60,
       transcriptionAudioSeconds: 30,
-      terraInputTokens: 1_500,
-      terraCachedInputTokens: 200,
-      terraOutputTokens: 150,
+      captionInputTokens: 1_500,
+      captionCachedInputTokens: 200,
+      captionOutputTokens: 150,
     });
     const costs = estimateSessionCost(usage);
     expect(costs.liveTranscription).toBeCloseTo(0.017);
     expect(costs.transcription).toBeCloseTo(0.00225);
-    expect(costs.terra).toBeCloseTo(0.00444);
+    expect(costs.captionGeneration).toBeCloseTo(0.000444);
     expect(costs.total).toBeCloseTo(0.02369);
   });
 
