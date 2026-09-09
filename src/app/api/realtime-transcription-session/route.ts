@@ -1,3 +1,4 @@
+import OpenAI, { APIError } from "openai";
 import { getOpenAIApiKey, missingApiKeyResponse } from "@/lib/openai-api-key";
 import { PROPER_NOUN_TRANSCRIPTION_GUIDANCE } from "@/lib/transcription-prompt";
 
@@ -26,60 +27,50 @@ export async function POST(request: Request) {
     .join("\n");
 
   try {
-    const response = await fetch(
-      "https://api.openai.com/v1/realtime/client_secrets",
+    const openai = new OpenAI({ apiKey });
+    const clientSecret = await openai.realtime.clientSecrets.create(
       {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          session: {
-            type: "transcription",
-            audio: {
-              input: {
-                noise_reduction: { type: "near_field" },
-                transcription: {
-                  model: "gpt-live-transcribe",
-                  prompt,
-                  languages: ["ja"],
-                  delay: "minimal",
-                },
-                turn_detection: null,
+        session: {
+          type: "transcription",
+          audio: {
+            input: {
+              noise_reduction: { type: "near_field" },
+              transcription: {
+                model: "gpt-live-transcribe",
+                prompt,
+                languages: ["ja"],
+                delay: "minimal",
               },
+              turn_detection: null,
             },
           },
-          expires_after: { anchor: "created_at", seconds: 60 },
-        }),
-        cache: "no-store",
-      },
-    );
-    const data = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      return Response.json(
-        {
-          error:
-            (data as { error?: { message?: string } } | null)?.error?.message ??
-            "Realtime文字起こしセッションを準備できませんでした",
         },
-        { status: response.status },
-      );
-    }
+        expires_after: { anchor: "created_at", seconds: 60 },
+      },
+      { signal: request.signal },
+    );
 
-    return Response.json(data, {
+    return Response.json(clientSecret, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (reason) {
+    const apiError = reason instanceof APIError ? reason : null;
     return Response.json(
       {
         error:
           reason instanceof Error
             ? reason.message
             : "Realtime文字起こしAPIへ接続できませんでした",
+        details: apiError
+          ? {
+              code: apiError.code ?? undefined,
+              type: apiError.type,
+              param: apiError.param ?? undefined,
+              requestId: apiError.requestID ?? undefined,
+            }
+          : undefined,
       },
-      { status: 502 },
+      { status: apiError?.status ?? 502 },
     );
   }
 }

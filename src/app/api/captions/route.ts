@@ -1,5 +1,5 @@
 import OpenAI, { APIError } from "openai";
-import { zodResponseFormat } from "openai/helpers/zod";
+import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import {
   buildFuriganaSegments,
@@ -115,22 +115,20 @@ async function generateTranslation(
   let streamedText = "";
 
   try {
-    const responseStream = openai.chat.completions.stream(
+    const responseStream = openai.responses.stream(
       {
         model: CAPTION_MODEL,
         service_tier: "default",
-        reasoning_effort: "none",
-        verbosity: "low",
-        messages: [
-          { role: "system", content: instructions },
-          { role: "user", content: input },
-        ],
+        reasoning: { effort: "none" },
+        text: { verbosity: "low" },
+        instructions,
+        input,
         store: false,
       },
       { signal },
     );
 
-    responseStream.on("content.delta", ({ snapshot }) => {
+    responseStream.on("response.output_text.delta", ({ snapshot }) => {
       modelOutput = snapshot;
       const text = snapshot.trimStart().slice(0, 700);
       if (!text.trim() || text === streamedText) return;
@@ -138,30 +136,22 @@ async function generateTranslation(
       reportUpdate({ type: "translation", language, text });
     });
 
-    const data = await responseStream.finalChatCompletion();
-    const choice = data.choices[0];
-    const message = choice?.message;
-    modelOutput = message?.content ?? modelOutput;
+    const data = await responseStream.finalResponse();
+    modelOutput = data.output_text || modelOutput;
     const requestId = (data as typeof data & { _request_id?: string })
       ._request_id;
 
-    if (
-      !choice ||
-      choice.finish_reason !== "stop" ||
-      typeof message?.content !== "string"
-    ) {
+    if (data.status !== "completed") {
       throw new CaptionGenerationError(
-        `${languageName}の翻訳が完了しませんでした`,
+        data.error?.message ?? `${languageName}の翻訳が完了しませんでした`,
         {
           stage: "caption_generation",
           category: "openai_response",
-          code:
-            typeof message?.content === "string"
-              ? "response_incomplete"
-              : "text_output_missing",
+          code: data.error?.code ?? "response_incomplete",
           requestId,
           responseId: data.id,
-          responseStatus: choice?.finish_reason,
+          responseStatus: data.status,
+          incompleteReason: data.incomplete_details?.reason,
           model: CAPTION_MODEL,
           language: languageName,
           modelOutput: modelOutput.slice(0, 2000),
@@ -169,7 +159,7 @@ async function generateTranslation(
       );
     }
 
-    const text = message.content.trim().slice(0, 700);
+    const text = data.output_text.trim().slice(0, 700);
     if (!text) {
       throw new CaptionGenerationError(`${languageName}の翻訳が空でした`, {
         stage: "caption_generation",
@@ -177,7 +167,7 @@ async function generateTranslation(
         code: "translation_empty",
         requestId,
         responseId: data.id,
-        responseStatus: choice.finish_reason,
+        responseStatus: data.status,
         model: CAPTION_MODEL,
         language: languageName,
         modelOutput: modelOutput.slice(0, 2000),
@@ -268,48 +258,47 @@ async function generateFurigana(
   let modelOutput = "";
 
   try {
-    const { data, request_id: requestId } = await openai.chat.completions
+    const { data, request_id: requestId } = await openai.responses
       .parse(
         {
           model: CAPTION_MODEL,
           service_tier: "default",
-          reasoning_effort: "none",
-          verbosity: "low",
-          messages: [
-            { role: "system", content: instructions },
-            { role: "user", content: input },
-          ],
-          response_format: zodResponseFormat(
-            furiganaSchema,
-            "furigana_readings",
-          ),
+          reasoning: { effort: "none" },
+          text: {
+            verbosity: "low",
+            format: zodTextFormat(furiganaSchema, "furigana_readings"),
+          },
+          instructions,
+          input,
           store: false,
         },
         { signal },
       )
       .withResponse();
-    const choice = data.choices[0];
-    const message = choice?.message;
-    modelOutput = message?.content ?? "";
+    modelOutput = data.output_text;
 
-    if (!choice || choice.finish_reason !== "stop" || !message?.parsed) {
-      throw new CaptionGenerationError("ふりがなの生成が完了しませんでした", {
-        stage: "caption_generation",
-        category: "openai_response",
-        code: message?.parsed
-          ? "response_incomplete"
-          : "structured_output_missing",
-        requestId,
-        responseId: data.id,
-        responseStatus: choice?.finish_reason,
-        model: CAPTION_MODEL,
-        modelOutput: modelOutput.slice(0, 2000),
-      });
+    if (data.status !== "completed" || !data.output_parsed) {
+      throw new CaptionGenerationError(
+        data.error?.message ?? "ふりがなの生成が完了しませんでした",
+        {
+          stage: "caption_generation",
+          category: "openai_response",
+          code: data.output_parsed
+            ? (data.error?.code ?? "response_incomplete")
+            : "structured_output_missing",
+          requestId,
+          responseId: data.id,
+          responseStatus: data.status,
+          incompleteReason: data.incomplete_details?.reason,
+          model: CAPTION_MODEL,
+          modelOutput: modelOutput.slice(0, 2000),
+        },
+      );
     }
 
     const furiganaResult = buildFuriganaSegments(
       japanese,
-      message.parsed.readings,
+      data.output_parsed.readings,
     );
     if (furiganaResult.error) {
       throw new CaptionGenerationError(furiganaResult.error.message, {
@@ -319,7 +308,7 @@ async function generateFurigana(
         validationIndex: furiganaResult.error.index,
         requestId,
         responseId: data.id,
-        responseStatus: choice.finish_reason,
+        responseStatus: data.status,
         model: CAPTION_MODEL,
         modelOutput: modelOutput.slice(0, 2000),
       });
