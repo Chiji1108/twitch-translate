@@ -102,6 +102,10 @@ type RealtimeTranscriptionEvent = {
   usage?: OpenAIUsage;
   error?: { message?: string };
 };
+type AudioCaptureWorkletMessage =
+  | { type: "speech-start" }
+  | { type: "discard" }
+  | { type: "turn"; samples: ArrayBuffer; sampleRate: number };
 const LANGUAGES = TRANSLATION_LANGUAGES;
 
 const DEMO_JA = "今日は最近あった出来事について話します！";
@@ -673,13 +677,12 @@ export default function Home() {
   const [trackingRealtimeCost, setTrackingRealtimeCost] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const vadFrameRef = useRef<number | null>(null);
+  const audioCaptureWorkletRef = useRef<AudioWorkletNode | null>(null);
   const audioTurnQueueRef = useRef<QueuedAudioTurn[]>([]);
   const processingQueueRef = useRef(false);
   const pipelineGenerationRef = useRef(0);
   const activeRequestRef = useRef<AbortController | null>(null);
   const nextTurnIdRef = useRef(0);
-  const sentencePauseMsRef = useRef(DEFAULT_SENTENCE_PAUSE_MS);
   const realtimeTranscriptionRef = useRef<RealtimeTranscriptionPeer | null>(
     null,
   );
@@ -806,7 +809,10 @@ export default function Home() {
   );
 
   useEffect(() => {
-    sentencePauseMsRef.current = sentencePauseMs;
+    audioCaptureWorkletRef.current?.port.postMessage({
+      type: "configure",
+      pauseMs: sentencePauseMs,
+    });
   }, [sentencePauseMs]);
 
   useEffect(() => {
@@ -914,13 +920,13 @@ export default function Home() {
       streamRef.current?.getTracks().forEach((track) => {
         track.stop();
       });
-      if (vadFrameRef.current !== null) {
-        window.cancelAnimationFrame(vadFrameRef.current);
-      }
+      audioCaptureWorkletRef.current?.port.postMessage({ type: "stop" });
+      audioCaptureWorkletRef.current?.port.close();
+      audioCaptureWorkletRef.current?.disconnect();
       void audioContextRef.current?.close();
       streamRef.current = null;
       audioContextRef.current = null;
-      vadFrameRef.current = null;
+      audioCaptureWorkletRef.current = null;
       activeRequestRef.current = null;
       audioTurnQueueRef.current = [];
       processingQueueRef.current = false;
@@ -1260,17 +1266,33 @@ export default function Home() {
       };
 
       const audioContext = new AudioContext();
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 1024;
-      const source = audioContext.createMediaStreamSource(stream);
-      source.connect(analyser);
-      const capture = audioContext.createScriptProcessor(2048, 1, 1);
-      const silentOutput = audioContext.createGain();
-      silentOutput.gain.value = 0;
-      source.connect(capture);
-      capture.connect(silentOutput);
-      silentOutput.connect(audioContext.destination);
       audioContextRef.current = audioContext;
+      if (
+        !audioContext.audioWorklet ||
+        typeof AudioWorkletNode === "undefined"
+      ) {
+        throw new Error(
+          "このブラウザはバックグラウンド録音に必要なAudioWorkletに対応していません",
+        );
+      }
+      await audioContext.audioWorklet.addModule("/audio-capture-worklet.js");
+      if (generation !== pipelineGenerationRef.current) return;
+      const source = audioContext.createMediaStreamSource(stream);
+      const capture = new AudioWorkletNode(audioContext, "miri-audio-capture", {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+        processorOptions: {
+          pauseMs: sentencePauseMs,
+          threshold: 0.025,
+          preRollMs: 400,
+          minimumVoiceMs: 80,
+        },
+      });
+      source.connect(capture);
+      capture.connect(audioContext.destination);
+      audioCaptureWorkletRef.current = capture;
+      if (audioContext.state === "suspended") await audioContext.resume();
 
       const realtimeTrack = stream.getAudioTracks()[0];
       if (realtimeTrack) {
@@ -1315,44 +1337,16 @@ export default function Home() {
         }
       }
 
-      const samples = new Uint8Array(analyser.fftSize);
-      let turnAudioChunks: Float32Array[] = [];
-      let turnAudioSampleCount = 0;
-      let turnHasSpeech = false;
-      let voicedFrameCount = 0;
-      const preRollSamples = Math.round(audioContext.sampleRate * 0.4);
-      const minimumVoicedFrames = 5;
-
-      capture.onaudioprocess = (event) => {
-        const chunk = new Float32Array(event.inputBuffer.getChannelData(0));
-        turnAudioChunks.push(chunk);
-        turnAudioSampleCount += chunk.length;
-        while (
-          !turnHasSpeech &&
-          turnAudioSampleCount > preRollSamples &&
-          turnAudioChunks.length > 1
-        ) {
-          turnAudioSampleCount -= turnAudioChunks[0].length;
-          turnAudioChunks.shift();
-        }
-      };
-
-      let heardSpeech = false;
-      let lastVoiceAt = 0;
+      if (generation !== pipelineGenerationRef.current) return;
       let currentTurnId: number | null = null;
+      capture.port.onmessage = (
+        event: MessageEvent<AudioCaptureWorkletMessage>,
+      ) => {
+        if (generation !== pipelineGenerationRef.current) return;
+        const message = event.data;
 
-      const detectSentencePause = () => {
-        analyser.getByteTimeDomainData(samples);
-        let energy = 0;
-        for (const sample of samples) {
-          const normalized = (sample - 128) / 128;
-          energy += normalized * normalized;
-        }
-        const volume = Math.sqrt(energy / samples.length);
-        const now = performance.now();
-
-        if (volume > 0.025) {
-          if (!heardSpeech) {
+        if (message.type === "speech-start") {
+          if (currentTurnId === null) {
             const newTurnId = ++nextTurnIdRef.current;
             currentTurnId = newTurnId;
             pendingRealtimeTurnIdsRef.current.push(newTurnId);
@@ -1372,46 +1366,31 @@ export default function Home() {
             );
             setIsSpeaking(true);
           }
-          heardSpeech = true;
-          turnHasSpeech = true;
           realtimeSpeechInBufferRef.current = true;
-          voicedFrameCount += 1;
-          lastVoiceAt = now;
-        } else if (
-          heardSpeech &&
-          now - lastVoiceAt > sentencePauseMsRef.current
-        ) {
-          if (
-            turnAudioSampleCount > 0 &&
-            voicedFrameCount >= minimumVoicedFrames &&
-            currentTurnId !== null
-          ) {
-            enqueueTurn(
-              currentTurnId,
-              encodeMonoWav(turnAudioChunks, audioContext.sampleRate),
-            );
-          } else if (currentTurnId !== null) {
-            const discardedTurnId = currentTurnId;
-            forgetRealtimeTurn(discardedTurnId);
-            setCaptionEntries((current) =>
-              current.filter((entry) => entry.id !== discardedTurnId),
-            );
-          }
-          turnAudioChunks = [];
-          turnAudioSampleCount = 0;
-          turnHasSpeech = false;
-          voicedFrameCount = 0;
-          heardSpeech = false;
-          currentTurnId = null;
-          setIsSpeaking(false);
-          commitRealtimeTranscription();
-          realtimeSpeechInBufferRef.current = false;
+          return;
         }
 
-        vadFrameRef.current = window.requestAnimationFrame(detectSentencePause);
-      };
+        if (message.type === "turn" && currentTurnId !== null) {
+          const audioSamples = new Float32Array(message.samples);
+          if (audioSamples.length > 0) {
+            enqueueTurn(
+              currentTurnId,
+              encodeMonoWav([audioSamples], message.sampleRate),
+            );
+          }
+        } else if (message.type === "discard" && currentTurnId !== null) {
+          const discardedTurnId = currentTurnId;
+          forgetRealtimeTurn(discardedTurnId);
+          setCaptionEntries((current) =>
+            current.filter((entry) => entry.id !== discardedTurnId),
+          );
+        }
 
-      detectSentencePause();
+        currentTurnId = null;
+        setIsSpeaking(false);
+        commitRealtimeTranscription();
+        realtimeSpeechInBufferRef.current = false;
+      };
       setStatus("live");
     } catch (reason) {
       stop();
