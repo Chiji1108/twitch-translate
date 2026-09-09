@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { CaptionRenderer } from "@/components/caption-renderer";
-import { OBS_CAPTION_EVENT_NAME } from "@/lib/obs-caption-transport";
+import {
+  decodeObsCaptionEventData,
+  OBS_CAPTION_EVENT_NAME,
+} from "@/lib/obs-caption-transport";
 import {
   emptySubtitleState,
   parseSubtitleState,
@@ -51,7 +54,7 @@ export default function Overlay() {
       }
     };
     const syncFromObs = (event: Event) => {
-      const nextState = parseSubtitleState(
+      const nextState = decodeObsCaptionEventData(
         (event as CustomEvent<unknown>).detail,
       );
       if (nextState) replaceSubtitleState(nextState);

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   createObsCaptionSender,
+  encodeObsCaptionEventData,
   OBS_CAPTION_EVENT_NAME,
 } from "@/lib/obs-caption-transport";
 import { selectSubtitleState, useCaptionStore } from "@/stores/caption-store";
@@ -175,7 +176,7 @@ export function ObsWebSocketPanel({
           requestData: JSON.parse(
             JSON.stringify({
               event_name: OBS_CAPTION_EVENT_NAME,
-              event_data: state,
+              event_data: encodeObsCaptionEventData(state),
             }),
           ),
         }),

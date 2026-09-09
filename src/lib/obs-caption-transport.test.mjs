@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { createObsCaptionSender } from "./obs-caption-transport.ts";
+import {
+  createObsCaptionSender,
+  decodeObsCaptionEventData,
+  encodeObsCaptionEventData,
+} from "./obs-caption-transport.ts";
 
 const state = (japanese) => ({
   entries: [],
@@ -15,6 +19,37 @@ const state = (japanese) => ({
 });
 
 describe("OBS caption sender", () => {
+  test("文字列配列をJSON文字列としてOBS Browserへ安全に渡す", () => {
+    const subtitle = {
+      ...state("完成字幕"),
+      entries: [
+        {
+          id: 1,
+          japanese: "字幕",
+          furigana: [],
+          translations: { en: "Caption" },
+          provisional: false,
+          completed: true,
+        },
+      ],
+    };
+
+    const eventData = encodeObsCaptionEventData(subtitle);
+
+    expect(eventData).toEqual({
+      protocolVersion: 1,
+      stateJson: JSON.stringify(subtitle),
+    });
+    expect(decodeObsCaptionEventData(eventData)).toEqual(subtitle);
+  });
+
+  test("不正なOBSイベントは字幕状態として受け取らない", () => {
+    expect(decodeObsCaptionEventData({ protocolVersion: 1 })).toBeNull();
+    expect(
+      decodeObsCaptionEventData({ protocolVersion: 1, stateJson: "{" }),
+    ).toBeNull();
+  });
+
   test("送信中のdeltaは最新スナップショットへまとめる", async () => {
     const sent = [];
     let releaseFirst;
