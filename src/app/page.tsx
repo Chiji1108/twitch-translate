@@ -25,6 +25,9 @@ import {
   DEFAULT_TRANSLATION_STYLES,
   defaultSettings,
   MAX_CAPTION_ENTRIES,
+  MAX_CAPTION_FONT_SIZE,
+  MIN_JAPANESE_FONT_SIZE,
+  MIN_TRANSLATION_FONT_SIZE,
   parseStoredSettings,
   SETTINGS_STORAGE_KEY,
   SUBTITLE_CHANNEL_NAME,
@@ -1519,8 +1522,8 @@ export default function Home() {
                     <span>日本語</span>
                     <input
                       type="range"
-                      min="24"
-                      max="48"
+                      min={MIN_JAPANESE_FONT_SIZE}
+                      max={MAX_CAPTION_FONT_SIZE}
                       value={japaneseFontSize}
                       onChange={(event) =>
                         setJapaneseFontSize(Number(event.target.value))
@@ -1541,8 +1544,8 @@ export default function Home() {
                         <span>{item?.name}</span>
                         <input
                           type="range"
-                          min="16"
-                          max="48"
+                          min={MIN_TRANSLATION_FONT_SIZE}
+                          max={MAX_CAPTION_FONT_SIZE}
                           value={style.fontSize}
                           onChange={(event) =>
                             updateTranslationStyle(language, {

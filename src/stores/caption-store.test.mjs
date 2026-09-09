@@ -86,6 +86,10 @@ describe("caption store", () => {
       JSON.stringify({
         targets: ["en", "ru", "unknown", "en"],
         sentencePauseMs: 99999,
+        japaneseFontSize: 20,
+        translationStyles: {
+          en: { fontSize: 10, color: "#8ee8c5" },
+        },
         japaneseColor: "invalid",
         alignment: "right",
       }),
@@ -93,6 +97,8 @@ describe("caption store", () => {
 
     expect(settings?.targets).toEqual(["en", "ru"]);
     expect(settings?.sentencePauseMs).toBe(1000);
+    expect(settings?.japaneseFontSize).toBe(20);
+    expect(settings?.translationStyles.en?.fontSize).toBe(10);
     expect(settings?.japaneseColor).toBe("#ffffff");
     expect(settings?.alignment).toBe("right");
   });

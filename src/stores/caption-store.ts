@@ -132,6 +132,9 @@ const DEMO_TRANSLATIONS: Record<string, string> = {
 export const DEFAULT_SENTENCE_PAUSE_MS = 1000;
 export const DEFAULT_CAPTION_HOLD_MS = 10000;
 export const DEFAULT_JAPANESE_FONT_SIZE = 24;
+export const MIN_JAPANESE_FONT_SIZE = 20;
+export const MIN_TRANSLATION_FONT_SIZE = 10;
+export const MAX_CAPTION_FONT_SIZE = 48;
 export const CAPTION_FADE_MS = 500;
 export const DEFAULT_JAPANESE_COLOR = "#ffffff";
 export const SETTINGS_STORAGE_KEY = "miri-translator-settings-v2";
@@ -276,8 +279,8 @@ export function parseStoredSettings(value: string | null): AppSettings | null {
           {
             fontSize: numberInRange(
               savedStyle?.fontSize,
-              16,
-              48,
+              MIN_TRANSLATION_FONT_SIZE,
+              MAX_CAPTION_FONT_SIZE,
               fallback.fontSize,
             ),
             color: colorOrDefault(savedStyle?.color, fallback.color),
@@ -300,8 +303,8 @@ export function parseStoredSettings(value: string | null): AppSettings | null {
       ),
       japaneseFontSize: numberInRange(
         stored.japaneseFontSize,
-        24,
-        48,
+        MIN_JAPANESE_FONT_SIZE,
+        MAX_CAPTION_FONT_SIZE,
         defaults.japaneseFontSize,
       ),
       japaneseColor: colorOrDefault(
