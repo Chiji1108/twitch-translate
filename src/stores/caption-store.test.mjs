@@ -30,7 +30,6 @@ describe("caption store", () => {
         translations: {},
         provisional: true,
         completed: false,
-        fading: false,
       },
     ]);
     setEntries((entries) =>
@@ -71,7 +70,6 @@ describe("caption store", () => {
           translations: { en: "Test" },
           provisional: false,
           completed: true,
-          fading: false,
         },
       ],
     };

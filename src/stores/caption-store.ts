@@ -37,7 +37,6 @@ export type CaptionEntry = {
   translations: Record<string, string>;
   provisional: boolean;
   completed: boolean;
-  fading: boolean;
   completedAt?: number;
   demo?: boolean;
 };
@@ -51,6 +50,7 @@ export type SubtitleState = {
   alignment: CaptionAlignment;
   verticalAlignment: CaptionVerticalAlignment;
   captionStyle: CaptionStyle;
+  captionHoldMs: number;
 };
 
 export type CaptionErrorState = {
@@ -60,7 +60,7 @@ export type CaptionErrorState = {
 
 type StateUpdate<T> = T | ((current: T) => T);
 
-type CaptionStore = AppSettings & {
+export type CaptionStore = AppSettings & {
   status: SessionStatus;
   entries: CaptionEntry[];
   captionError: CaptionErrorState | null;
@@ -154,7 +154,6 @@ export function demoCaptionEntry(): CaptionEntry {
     translations: DEMO_TRANSLATIONS,
     provisional: false,
     completed: true,
-    fading: false,
     demo: true,
   };
 }
@@ -194,7 +193,42 @@ export function emptySubtitleState(): SubtitleState {
     alignment: defaults.alignment,
     verticalAlignment: defaults.verticalAlignment,
     captionStyle: defaults.captionStyle,
+    captionHoldMs: defaults.captionHoldMs,
   };
+}
+
+export function selectSubtitleState(state: CaptionStore): SubtitleState {
+  return {
+    entries: state.entries,
+    targets: state.targets,
+    japaneseFontSize: state.japaneseFontSize,
+    japaneseColor: state.japaneseColor,
+    translationStyles: state.translationStyles,
+    alignment: state.alignment,
+    verticalAlignment: state.verticalAlignment,
+    captionStyle: state.captionStyle,
+    captionHoldMs: state.captionHoldMs,
+  };
+}
+
+export function parseSubtitleState(value: unknown): SubtitleState | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<SubtitleState>;
+  if (
+    !Array.isArray(candidate.entries) ||
+    !Array.isArray(candidate.targets) ||
+    typeof candidate.japaneseFontSize !== "number" ||
+    typeof candidate.japaneseColor !== "string" ||
+    !candidate.translationStyles ||
+    typeof candidate.translationStyles !== "object" ||
+    !["left", "center", "right"].includes(candidate.alignment ?? "") ||
+    !["top", "center", "bottom"].includes(candidate.verticalAlignment ?? "") ||
+    !["simple", "labeled"].includes(candidate.captionStyle ?? "") ||
+    typeof candidate.captionHoldMs !== "number"
+  ) {
+    return null;
+  }
+  return candidate as SubtitleState;
 }
 
 export function parseStoredSettings(value: string | null): AppSettings | null {

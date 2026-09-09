@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { CaptionStackLine } from "@/components/caption-stack-line";
+import { CaptionRenderer } from "@/components/caption-renderer";
+import { ObsWebSocketPanel } from "@/components/obs-websocket-panel";
 import type { FuriganaFailureDetails, FuriganaSegment } from "@/lib/furigana";
 import { normalizeJapanesePunctuation } from "@/lib/japanese-text";
 import {
@@ -20,7 +21,6 @@ import {
 } from "@/lib/usage-cost";
 import {
   type AppSettings,
-  CAPTION_FADE_MS,
   type CaptionErrorState,
   DEFAULT_TRANSLATION_STYLES,
   defaultSettings,
@@ -78,10 +78,6 @@ const LANGUAGES = TRANSLATION_LANGUAGES;
 const PREVIEW_WIDTH = 800;
 const PREVIEW_HEIGHT = 400;
 const API_KEY_STORAGE_KEY = "miri-translator-openai-api-key-v1";
-
-function previewFontSize(fontSize: number) {
-  return `${(fontSize / PREVIEW_WIDTH) * 100}cqw`;
-}
 
 function waitForRealtimePeer(
   connection: RTCPeerConnection,
@@ -290,29 +286,6 @@ function formatPauseDuration(milliseconds: number) {
   return `${(milliseconds / 1000).toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}秒`;
 }
 
-function JapaneseText({
-  text,
-  furigana,
-}: {
-  text: string;
-  furigana: FuriganaSegment[];
-}) {
-  if (!furigana.length) return text;
-  let offset = 0;
-  return furigana.map((segment) => {
-    const key = `${offset}-${segment.text}`;
-    offset += segment.text.length;
-    return segment.reading ? (
-      <ruby key={key}>
-        {segment.text}
-        <rt>{segment.reading}</rt>
-      </ruby>
-    ) : (
-      <span key={key}>{segment.text}</span>
-    );
-  });
-}
-
 const FURIGANA_ERROR_CATEGORY_LABELS: Record<
   FuriganaFailureDetails["category"],
   string
@@ -381,19 +354,12 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
       </>
     ),
     stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
-    copy: (
-      <>
-        <rect x="8" y="8" width="11" height="11" rx="2" />
-        <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
-      </>
-    ),
     external: (
       <>
         <path d="M15 3h6v6M10 14 21 3" />
         <path d="M18 13v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h7" />
       </>
     ),
-    check: <path d="m5 12 4 4L19 6" />,
     spark: (
       <>
         <path d="m12 3 1.2 4.8L18 9l-4.8 1.2L12 15l-1.2-4.8L6 9l4.8-1.2L12 3Z" />
@@ -499,7 +465,6 @@ export default function Home() {
       restoreDemo: state.restoreDemo,
     })),
   );
-  const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [hasCostSession, setHasCostSession] = useState(false);
@@ -658,45 +623,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (showingDemo) return;
-    const now = Date.now();
-    const timers: number[] = [];
-    for (const entry of captionEntries) {
-      if (!entry.completedAt || entry.demo) continue;
-      if (!entry.fading) {
-        timers.push(
-          window.setTimeout(
-            () =>
-              setCaptionEntries((current) =>
-                current.map((candidate) =>
-                  candidate.id === entry.id
-                    ? { ...candidate, fading: true }
-                    : candidate,
-                ),
-              ),
-            Math.max(0, entry.completedAt + captionHoldMs - now),
-          ),
-        );
-      }
-      timers.push(
-        window.setTimeout(
-          () =>
-            setCaptionEntries((current) =>
-              current.filter((candidate) => candidate.id !== entry.id),
-            ),
-          Math.max(
-            0,
-            entry.completedAt + captionHoldMs + CAPTION_FADE_MS - now,
-          ),
-        ),
-      );
-    }
-    return () => {
-      for (const timer of timers) window.clearTimeout(timer);
-    };
-  }, [captionEntries, captionHoldMs, showingDemo, setCaptionEntries]);
-
-  useEffect(() => {
     const state: SubtitleState = {
       entries: captionEntries,
       targets,
@@ -706,6 +632,7 @@ export default function Home() {
       alignment,
       verticalAlignment,
       captionStyle,
+      captionHoldMs,
     };
     try {
       localStorage.setItem(SUBTITLE_STORAGE_KEY, JSON.stringify(state));
@@ -724,6 +651,7 @@ export default function Home() {
     alignment,
     verticalAlignment,
     captionStyle,
+    captionHoldMs,
   ]);
 
   const stop = useCallback(
@@ -973,7 +901,6 @@ export default function Home() {
                           furigana: event.furigana ?? entry.furigana,
                           provisional: false,
                           completed: true,
-                          fading: false,
                           completedAt: Date.now(),
                         }
                       : entry,
@@ -995,7 +922,6 @@ export default function Home() {
                         ? {
                             ...entry,
                             completed: true,
-                            fading: false,
                             completedAt: Date.now(),
                           }
                         : entry,
@@ -1041,7 +967,6 @@ export default function Home() {
                         ...entry,
                         provisional: false,
                         completed: true,
-                        fading: false,
                         completedAt: Date.now(),
                       }
                     : entry,
@@ -1178,7 +1103,6 @@ export default function Home() {
                   translations: {},
                   provisional: true,
                   completed: false,
-                  fading: false,
                 },
               ].slice(-MAX_CAPTION_ENTRIES),
             );
@@ -1220,12 +1144,6 @@ export default function Home() {
       );
     }
   };
-  const copyOverlay = async () => {
-    await navigator.clipboard.writeText(`${window.location.origin}/overlay`);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
-  };
-
   const isLive = status === "live" || status === "connecting";
   const hasApiKey = apiKey.trim().length >= 20;
   const sessionCosts = estimateSessionCost(sessionUsage, liveConnectionSeconds);
@@ -1263,24 +1181,17 @@ export default function Home() {
         return "前の字幕を残したまま、次の発話を待っています";
     }
   })();
-  const captionLayoutDependency = JSON.stringify({
-    entries: captionEntries.map((entry) => ({
-      id: entry.id,
-      japanese: entry.japanese,
-      translations: targets.map(
-        (language) => entry.translations[language] ?? "",
-      ),
-    })),
+  const previewSubtitle: SubtitleState = {
+    entries: captionEntries,
     targets,
+    japaneseFontSize,
+    japaneseColor,
+    translationStyles,
     alignment,
     verticalAlignment,
-    japaneseFontSize,
     captionStyle,
-    translationFontSizes: targets.map(
-      (language) =>
-        (translationStyles[language] ?? DEFAULT_TRANSLATION_STYLES.en).fontSize,
-    ),
-  });
+    captionHoldMs,
+  };
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -1582,88 +1493,14 @@ export default function Home() {
                   : "STANDBY"}
             </span>
           </div>
-          <div
-            className={`screen vertical-${verticalAlignment} ${captionStyle === "labeled" ? "with-bg" : ""}`}
-          >
+          <div className="screen">
             <div className="screen-noise" />
             <div className="preview-content">
-              <div
-                className={`caption-stack caption-log align-${alignment}`}
-                style={
-                  {
-                    "--japanese-caption-size":
-                      previewFontSize(japaneseFontSize),
-                    "--japanese-caption-color": japaneseColor,
-                    "--preview-caption-gap": previewFontSize(8),
-                    "--preview-entry-gap": previewFontSize(14),
-                    "--preview-shadow-offset": previewFontSize(3),
-                    "--preview-shadow-blur": previewFontSize(5),
-                    "--preview-shadow-small-offset": previewFontSize(1),
-                    "--preview-shadow-small-blur": previewFontSize(2),
-                  } as React.CSSProperties
-                }
-              >
-                {captionEntries.map((entry) => {
-                  if (!entry.japanese) return null;
-                  return (
-                    <div
-                      key={entry.id}
-                      className={`caption-stack-entry caption-entry ${entry.provisional ? "is-provisional" : ""} ${entry.fading ? "is-fading" : ""}`}
-                    >
-                      <CaptionStackLine
-                        className="caption-motion-line"
-                        layoutDependency={captionLayoutDependency}
-                      >
-                        <div className="caption-line caption japanese">
-                          {captionStyle === "labeled" && (
-                            <span className="lang-tag">JA</span>
-                          )}
-                          <span className="caption-text">
-                            <JapaneseText
-                              text={entry.japanese}
-                              furigana={entry.furigana}
-                            />
-                          </span>
-                        </div>
-                      </CaptionStackLine>
-                      {targets.map((language) => {
-                        const text = entry.translations[language];
-                        const style =
-                          translationStyles[language] ??
-                          DEFAULT_TRANSLATION_STYLES.en;
-                        if (!text) return null;
-                        return (
-                          <CaptionStackLine
-                            key={language}
-                            className="caption-motion-line"
-                            layoutDependency={captionLayoutDependency}
-                          >
-                            <div
-                              className="caption-line caption translated"
-                              dir={language === "ar" ? "rtl" : undefined}
-                              style={{
-                                color: style.color,
-                                fontSize: previewFontSize(style.fontSize),
-                              }}
-                            >
-                              {captionStyle === "labeled" && (
-                                <span className="lang-tag">
-                                  {
-                                    LANGUAGES.find(
-                                      (item) => item.code === language,
-                                    )?.short
-                                  }
-                                </span>
-                              )}
-                              <span className="caption-text">{text}</span>
-                            </div>
-                          </CaptionStackLine>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
+              <CaptionRenderer
+                subtitle={previewSubtitle}
+                variant="preview"
+                previewWidth={PREVIEW_WIDTH}
+              />
             </div>
             <span className="preview-resolution-label">
               {PREVIEW_WIDTH} × {PREVIEW_HEIGHT}
@@ -1877,27 +1714,13 @@ export default function Home() {
               <b>{captionHoldMs / 1000}秒</b>
             </div>
           </div>
-          <div className="obs-row">
-            <div>
-              <span className="obs-copy">
-                <b>プレビューを確認したらOBSへ</b>
-                <small>
-                  コピーした /overlay URLをOBSのブラウザソースに登録します
-                </small>
-                <small>
-                  推奨サイズ：{PREVIEW_WIDTH} × {PREVIEW_HEIGHT}
-                  px（字幕が切れる場合は、幅や高さを広げてください）
-                </small>
-              </span>
-            </div>
-            <button type="button" onClick={copyOverlay}>
-              {copied ? <Icon name="check" /> : <Icon name="copy" />}{" "}
-              {copied ? "コピー済み" : "OBS URLをコピー"}
-            </button>
-          </div>
+          <ObsWebSocketPanel
+            overlayWidth={PREVIEW_WIDTH}
+            overlayHeight={PREVIEW_HEIGHT}
+          />
         </div>
         <div className="settings-storage-row">
-          <span>APIキー以外の設定は、このブラウザに自動保存されます</span>
+          <span>字幕・AI設定は、このブラウザに自動保存されます</span>
           <button
             type="button"
             onClick={resetSettings}
