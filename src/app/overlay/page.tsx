@@ -1,77 +1,89 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { CaptionStackLine } from "@/components/caption-stack-line";
-import type { FuriganaSegment } from "@/lib/furigana";
-
-const SUBTITLE_STORAGE_KEY = "miri-translator-subtitles-v7";
-const SUBTITLE_CHANNEL_NAME = "miri-translator-subtitles-v7";
-
-type TranslationStyle = { fontSize: number; color: string };
-type CaptionEntry = {
-  id: number;
-  japanese: string;
-  furigana: FuriganaSegment[];
-  translations: Record<string, string>;
-  provisional: boolean;
-  completed: boolean;
-  fading: boolean;
-  completedAt?: number;
-  demo?: boolean;
-};
-type SubtitleState = {
-  entries: CaptionEntry[];
-  targets: string[];
-  japaneseFontSize: number;
-  japaneseColor: string;
-  translationStyles: Record<string, TranslationStyle>;
-  alignment: "left" | "center" | "right";
-  verticalAlignment: "top" | "center" | "bottom";
-  captionStyle: "simple" | "labeled";
-};
-const initial: SubtitleState = {
-  entries: [],
-  targets: ["en"],
-  japaneseFontSize: 24,
-  japaneseColor: "#ffffff",
-  translationStyles: { en: { fontSize: 20, color: "#8ee8c5" } },
-  alignment: "center",
-  verticalAlignment: "bottom",
-  captionStyle: "labeled",
-};
+import {
+  type CaptionEntry,
+  emptySubtitleState,
+  SUBTITLE_CHANNEL_NAME,
+  SUBTITLE_STORAGE_KEY,
+  type SubtitleState,
+  useCaptionStore,
+} from "@/stores/caption-store";
 
 function JapaneseText({ entry }: { entry: CaptionEntry }) {
   if (!entry.furigana.length) return entry.japanese;
-  return entry.furigana.map((segment, index) =>
-    segment.reading ? (
-      <ruby key={`${segment.text}-${index}`}>
+  let offset = 0;
+  return entry.furigana.map((segment) => {
+    const key = `${offset}-${segment.text}`;
+    offset += segment.text.length;
+    return segment.reading ? (
+      <ruby key={key}>
         {segment.text}
         <rt>{segment.reading}</rt>
       </ruby>
     ) : (
-      <span key={`${segment.text}-${index}`}>{segment.text}</span>
-    ),
-  );
+      <span key={key}>{segment.text}</span>
+    );
+  });
 }
 
 export default function Overlay() {
-  const [subtitle, setSubtitle] = useState(initial);
+  const [overlayReady, setOverlayReady] = useState(false);
+  const {
+    entries,
+    targets,
+    japaneseFontSize,
+    japaneseColor,
+    translationStyles,
+    alignment,
+    verticalAlignment,
+    captionStyle,
+    replaceSubtitleState,
+  } = useCaptionStore(
+    useShallow((state) => ({
+      entries: state.entries,
+      targets: state.targets,
+      japaneseFontSize: state.japaneseFontSize,
+      japaneseColor: state.japaneseColor,
+      translationStyles: state.translationStyles,
+      alignment: state.alignment,
+      verticalAlignment: state.verticalAlignment,
+      captionStyle: state.captionStyle,
+      replaceSubtitleState: state.replaceSubtitleState,
+    })),
+  );
+  const subtitle: SubtitleState = {
+    entries: overlayReady ? entries : [],
+    targets,
+    japaneseFontSize,
+    japaneseColor,
+    translationStyles,
+    alignment,
+    verticalAlignment,
+    captionStyle,
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem(SUBTITLE_STORAGE_KEY);
-    if (saved) setSubtitle(JSON.parse(saved) as SubtitleState);
+    replaceSubtitleState(
+      saved ? (JSON.parse(saved) as SubtitleState) : emptySubtitleState(),
+    );
+    setOverlayReady(true);
     const channel = new BroadcastChannel(SUBTITLE_CHANNEL_NAME);
-    channel.onmessage = (event) => setSubtitle(event.data as SubtitleState);
+    channel.onmessage = (event) =>
+      replaceSubtitleState(event.data as SubtitleState);
     const sync = (event: StorageEvent) => {
       if (event.key === SUBTITLE_STORAGE_KEY && event.newValue)
-        setSubtitle(JSON.parse(event.newValue) as SubtitleState);
+        replaceSubtitleState(JSON.parse(event.newValue) as SubtitleState);
     };
     window.addEventListener("storage", sync);
     return () => {
       channel.close();
       window.removeEventListener("storage", sync);
     };
-  }, []);
+  }, [replaceSubtitleState]);
 
   const captionLayoutDependency = JSON.stringify({
     entries: subtitle.entries.map((entry) => ({

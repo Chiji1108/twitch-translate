@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { CaptionStackLine } from "@/components/caption-stack-line";
 import type { FuriganaFailureDetails, FuriganaSegment } from "@/lib/furigana";
 import { normalizeJapanesePunctuation } from "@/lib/japanese-text";
@@ -17,59 +18,26 @@ import {
   formatEstimatedUsd,
   type OpenAIUsage,
 } from "@/lib/usage-cost";
+import {
+  type AppSettings,
+  CAPTION_FADE_MS,
+  type CaptionErrorState,
+  DEFAULT_TRANSLATION_STYLES,
+  defaultSettings,
+  MAX_CAPTION_ENTRIES,
+  parseStoredSettings,
+  SETTINGS_STORAGE_KEY,
+  SUBTITLE_CHANNEL_NAME,
+  SUBTITLE_STORAGE_KEY,
+  type SubtitleState,
+  type TranslationStyle,
+  useCaptionStore,
+} from "@/stores/caption-store";
 
-type SessionStatus = "idle" | "connecting" | "live" | "error";
-type CaptionAlignment = "left" | "center" | "right";
-type CaptionVerticalAlignment = "top" | "center" | "bottom";
-type CaptionStyle = "simple" | "labeled";
-type TranslationStyle = { fontSize: number; color: string };
-type AppSettings = {
-  targets: string[];
-  context: string;
-  sentencePauseMs: number;
-  japaneseFontSize: number;
-  japaneseColor: string;
-  translationStyles: Record<string, TranslationStyle>;
-  alignment: CaptionAlignment;
-  verticalAlignment: CaptionVerticalAlignment;
-  captionStyle: CaptionStyle;
-  captionHoldMs: number;
-};
-type CaptionEntry = {
-  id: number;
-  japanese: string;
-  furigana: FuriganaSegment[];
-  translations: Record<string, string>;
-  provisional: boolean;
-  completed: boolean;
-  fading: boolean;
-  completedAt?: number;
-  demo?: boolean;
-};
-type SubtitleState = {
-  entries: CaptionEntry[];
-  targets: string[];
-  japaneseFontSize: number;
-  japaneseColor: string;
-  translationStyles: Record<string, TranslationStyle>;
-  alignment: CaptionAlignment;
-  verticalAlignment: CaptionVerticalAlignment;
-  captionStyle: CaptionStyle;
-};
-type CaptionErrorState = {
-  message: string;
-  details?: FuriganaFailureDetails;
-};
 type QueuedAudioTurn = { id: number; audio: Blob };
 type CaptionPipelineErrorDetails = FuriganaFailureDetails & {
   stage?: "transcription" | "caption_generation";
 };
-type ProcessingStage =
-  | "idle"
-  | "uploading"
-  | "transcribing"
-  | "generating"
-  | "completed";
 type CaptionStreamEvent = {
   type?:
     | "progress"
@@ -107,200 +75,12 @@ type AudioCaptureWorkletMessage =
   | { type: "discard" }
   | { type: "turn"; samples: ArrayBuffer; sampleRate: number };
 const LANGUAGES = TRANSLATION_LANGUAGES;
-
-const DEMO_JA = "今日は最近あった出来事について話します！";
-const DEMO_FURIGANA: FuriganaSegment[] = [
-  { text: "今日", reading: "きょう" },
-  { text: "は", reading: null },
-  { text: "最近", reading: "さいきん" },
-  { text: "あった", reading: null },
-  { text: "出来事", reading: "できごと" },
-  { text: "について", reading: null },
-  { text: "話", reading: "はな" },
-  { text: "します！", reading: null },
-];
-const DEMO_TRANSLATIONS: Record<string, string> = {
-  en: "Today, I’ll talk about something that happened recently!",
-  ko: "오늘은 최근에 있었던 일에 대해 이야기할게요!",
-  zh: "今天来聊聊最近发生的事情！",
-  "zh-TW": "今天想和大家聊聊最近發生的事！",
-  "zh-HK": "今日想同大家講下最近發生嘅事！",
-  es: "¡Hoy hablaré de algo que ocurrió recientemente!",
-  fr: "Aujourd’hui, je vais parler de quelque chose qui s’est passé récemment !",
-  de: "Heute erzähle ich von etwas, das kürzlich passiert ist!",
-  it: "Oggi parlerò di qualcosa che è successo di recente!",
-  "pt-BR": "Hoje vou falar sobre algo que aconteceu recentemente!",
-  ru: "Сегодня я расскажу о том, что произошло недавно!",
-  uk: "Сьогодні я розповім про те, що сталося нещодавно!",
-  pl: "Dzisiaj opowiem o czymś, co wydarzyło się niedawno!",
-  nl: "Vandaag vertel ik over iets wat onlangs is gebeurd!",
-  sv: "I dag ska jag berätta om något som hände nyligen!",
-  tr: "Bugün yakın zamanda yaşanan bir olaydan bahsedeceğim!",
-  id: "Hari ini saya akan membahas sesuatu yang baru-baru ini terjadi!",
-  vi: "Hôm nay tôi sẽ kể về một chuyện mới xảy ra gần đây!",
-  th: "วันนี้จะมาเล่าเรื่องที่เพิ่งเกิดขึ้นเมื่อไม่นานมานี้!",
-  ar: "سأتحدث اليوم عن شيء حدث مؤخرًا!",
-  hi: "आज मैं हाल ही में हुई एक घटना के बारे में बात करूँगा!",
-  el: "Σήμερα θα μιλήσω για κάτι που συνέβη πρόσφατα!",
-  so: "Maanta waxaan ka hadli doonaa wax dhowaan dhacay!",
-};
-const DEFAULT_SENTENCE_PAUSE_MS = 1000;
-const DEFAULT_CAPTION_HOLD_MS = 10000;
-const DEFAULT_JAPANESE_FONT_SIZE = 24;
 const PREVIEW_WIDTH = 800;
 const PREVIEW_HEIGHT = 400;
-const CAPTION_FADE_MS = 500;
-const DEFAULT_JAPANESE_COLOR = "#ffffff";
-const DEFAULT_TRANSLATION_STYLES: Record<string, TranslationStyle> =
-  Object.fromEntries(
-    LANGUAGES.map(({ code, color }) => [code, { fontSize: 20, color }]),
-  );
 const API_KEY_STORAGE_KEY = "miri-translator-openai-api-key-v1";
-const SETTINGS_STORAGE_KEY = "miri-translator-settings-v2";
-const SUBTITLE_STORAGE_KEY = "miri-translator-subtitles-v7";
-const SUBTITLE_CHANNEL_NAME = "miri-translator-subtitles-v7";
-const MAX_CAPTION_ENTRIES = 30;
-
-function demoCaptionEntry(): CaptionEntry {
-  return {
-    id: 0,
-    japanese: DEMO_JA,
-    furigana: DEMO_FURIGANA,
-    translations: DEMO_TRANSLATIONS,
-    provisional: false,
-    completed: true,
-    fading: false,
-    demo: true,
-  };
-}
 
 function previewFontSize(fontSize: number) {
   return `${(fontSize / PREVIEW_WIDTH) * 100}cqw`;
-}
-
-function defaultTranslationStyles() {
-  return Object.fromEntries(
-    Object.entries(DEFAULT_TRANSLATION_STYLES).map(([language, style]) => [
-      language,
-      { ...style },
-    ]),
-  );
-}
-
-function defaultSettings(): AppSettings {
-  return {
-    targets: ["en"],
-    context: "",
-    sentencePauseMs: DEFAULT_SENTENCE_PAUSE_MS,
-    japaneseFontSize: DEFAULT_JAPANESE_FONT_SIZE,
-    japaneseColor: DEFAULT_JAPANESE_COLOR,
-    translationStyles: defaultTranslationStyles(),
-    alignment: "center",
-    verticalAlignment: "bottom",
-    captionStyle: "labeled",
-    captionHoldMs: DEFAULT_CAPTION_HOLD_MS,
-  };
-}
-
-function parseStoredSettings(value: string | null): AppSettings | null {
-  if (!value) return null;
-  try {
-    const stored = JSON.parse(value) as Partial<AppSettings>;
-    if (!stored || typeof stored !== "object") return null;
-    const defaults = defaultSettings();
-    const supportedLanguages = new Set<string>(
-      LANGUAGES.map(({ code }) => code),
-    );
-    const targets = Array.isArray(stored.targets)
-      ? Array.from(
-          new Set(
-            stored.targets.filter(
-              (language): language is string =>
-                typeof language === "string" &&
-                supportedLanguages.has(language),
-            ),
-          ),
-        ).slice(0, MAX_TRANSLATION_LANGUAGES)
-      : defaults.targets;
-    const numberInRange = (
-      candidate: unknown,
-      minimum: number,
-      maximum: number,
-      fallback: number,
-    ) =>
-      typeof candidate === "number" &&
-      Number.isFinite(candidate) &&
-      candidate >= minimum &&
-      candidate <= maximum
-        ? candidate
-        : fallback;
-    const colorOrDefault = (candidate: unknown, fallback: string) =>
-      typeof candidate === "string" && /^#[0-9a-f]{6}$/i.test(candidate)
-        ? candidate
-        : fallback;
-    const translationStyles = Object.fromEntries(
-      LANGUAGES.map(({ code }) => {
-        const savedStyle = stored.translationStyles?.[code];
-        const fallback = defaults.translationStyles[code];
-        return [
-          code,
-          {
-            fontSize: numberInRange(
-              savedStyle?.fontSize,
-              16,
-              48,
-              fallback.fontSize,
-            ),
-            color: colorOrDefault(savedStyle?.color, fallback.color),
-          },
-        ];
-      }),
-    );
-
-    return {
-      targets: targets.length ? targets : defaults.targets,
-      context:
-        typeof stored.context === "string"
-          ? stored.context.slice(0, 500)
-          : defaults.context,
-      sentencePauseMs: numberInRange(
-        stored.sentencePauseMs,
-        500,
-        3000,
-        defaults.sentencePauseMs,
-      ),
-      japaneseFontSize: numberInRange(
-        stored.japaneseFontSize,
-        24,
-        48,
-        defaults.japaneseFontSize,
-      ),
-      japaneseColor: colorOrDefault(
-        stored.japaneseColor,
-        defaults.japaneseColor,
-      ),
-      translationStyles,
-      alignment: ["left", "center", "right"].includes(stored.alignment ?? "")
-        ? (stored.alignment as CaptionAlignment)
-        : defaults.alignment,
-      verticalAlignment: ["top", "center", "bottom"].includes(
-        stored.verticalAlignment ?? "",
-      )
-        ? (stored.verticalAlignment as CaptionVerticalAlignment)
-        : defaults.verticalAlignment,
-      captionStyle: ["simple", "labeled"].includes(stored.captionStyle ?? "")
-        ? (stored.captionStyle as CaptionStyle)
-        : defaults.captionStyle,
-      captionHoldMs: numberInRange(
-        stored.captionHoldMs,
-        3000,
-        30000,
-        defaults.captionHoldMs,
-      ),
-    };
-  } catch {
-    return null;
-  }
 }
 
 function waitForRealtimePeer(
@@ -518,16 +298,19 @@ function JapaneseText({
   furigana: FuriganaSegment[];
 }) {
   if (!furigana.length) return text;
-  return furigana.map((segment, index) =>
-    segment.reading ? (
-      <ruby key={`${segment.text}-${index}`}>
+  let offset = 0;
+  return furigana.map((segment) => {
+    const key = `${offset}-${segment.text}`;
+    offset += segment.text.length;
+    return segment.reading ? (
+      <ruby key={key}>
         {segment.text}
         <rt>{segment.reading}</rt>
       </ruby>
     ) : (
-      <span key={`${segment.text}-${index}`}>{segment.text}</span>
-    ),
-  );
+      <span key={key}>{segment.text}</span>
+    );
+  });
 }
 
 const FURIGANA_ERROR_CATEGORY_LABELS: Record<
@@ -636,38 +419,86 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
 }
 
 export default function Home() {
-  const [status, setStatus] = useState<SessionStatus>("idle");
   const [apiKey, setApiKey] = useState("");
   const [rememberApiKey, setRememberApiKey] = useState(false);
-  const [targets, setTargets] = useState<string[]>(["en"]);
   const [languageQuery, setLanguageQuery] = useState("");
-  const [captionEntries, setCaptionEntries] = useState<CaptionEntry[]>(() => [
-    demoCaptionEntry(),
-  ]);
-  const [captionError, setCaptionError] = useState<CaptionErrorState | null>(
-    null,
+  const {
+    status,
+    setStatus,
+    targets,
+    setTargets,
+    entries: captionEntries,
+    setEntries: setCaptionEntries,
+    captionError,
+    setCaptionError,
+    showingDemo,
+    setShowingDemo,
+    japaneseFontSize,
+    setJapaneseFontSize,
+    japaneseColor,
+    setJapaneseColor,
+    translationStyles,
+    setTranslationStyles,
+    alignment,
+    setAlignment,
+    verticalAlignment,
+    setVerticalAlignment,
+    captionStyle,
+    setCaptionStyle,
+    captionHoldMs,
+    setCaptionHoldMs,
+    context,
+    setContext,
+    sentencePauseMs,
+    setSentencePauseMs,
+    isSpeaking,
+    setIsSpeaking,
+    pendingTurns,
+    setPendingTurns,
+    processingStage,
+    setProcessingStage,
+    applySettings,
+    restoreDemo,
+  } = useCaptionStore(
+    useShallow((state) => ({
+      status: state.status,
+      setStatus: state.setStatus,
+      targets: state.targets,
+      setTargets: state.setTargets,
+      entries: state.entries,
+      setEntries: state.setEntries,
+      captionError: state.captionError,
+      setCaptionError: state.setCaptionError,
+      showingDemo: state.showingDemo,
+      setShowingDemo: state.setShowingDemo,
+      japaneseFontSize: state.japaneseFontSize,
+      setJapaneseFontSize: state.setJapaneseFontSize,
+      japaneseColor: state.japaneseColor,
+      setJapaneseColor: state.setJapaneseColor,
+      translationStyles: state.translationStyles,
+      setTranslationStyles: state.setTranslationStyles,
+      alignment: state.alignment,
+      setAlignment: state.setAlignment,
+      verticalAlignment: state.verticalAlignment,
+      setVerticalAlignment: state.setVerticalAlignment,
+      captionStyle: state.captionStyle,
+      setCaptionStyle: state.setCaptionStyle,
+      captionHoldMs: state.captionHoldMs,
+      setCaptionHoldMs: state.setCaptionHoldMs,
+      context: state.context,
+      setContext: state.setContext,
+      sentencePauseMs: state.sentencePauseMs,
+      setSentencePauseMs: state.setSentencePauseMs,
+      isSpeaking: state.isSpeaking,
+      setIsSpeaking: state.setIsSpeaking,
+      pendingTurns: state.pendingTurns,
+      setPendingTurns: state.setPendingTurns,
+      processingStage: state.processingStage,
+      setProcessingStage: state.setProcessingStage,
+      applySettings: state.applySettings,
+      restoreDemo: state.restoreDemo,
+    })),
   );
-  const [showingDemo, setShowingDemo] = useState(true);
-  const [japaneseFontSize, setJapaneseFontSize] = useState(
-    DEFAULT_JAPANESE_FONT_SIZE,
-  );
-  const [japaneseColor, setJapaneseColor] = useState(DEFAULT_JAPANESE_COLOR);
-  const [translationStyles, setTranslationStyles] = useState(
-    DEFAULT_TRANSLATION_STYLES,
-  );
-  const [alignment, setAlignment] = useState<CaptionAlignment>("center");
-  const [verticalAlignment, setVerticalAlignment] =
-    useState<CaptionVerticalAlignment>("bottom");
-  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("labeled");
-  const [captionHoldMs, setCaptionHoldMs] = useState(DEFAULT_CAPTION_HOLD_MS);
-  const [context, setContext] = useState("");
-  const [sentencePauseMs, setSentencePauseMs] = useState(
-    DEFAULT_SENTENCE_PAUSE_MS,
-  );
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [pendingTurns, setPendingTurns] = useState(0);
-  const [processingStage, setProcessingStage] =
-    useState<ProcessingStage>("idle");
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -709,23 +540,14 @@ export default function Home() {
         localStorage.getItem(SETTINGS_STORAGE_KEY),
       );
       if (saved) {
-        setTargets(saved.targets);
-        setContext(saved.context);
-        setSentencePauseMs(saved.sentencePauseMs);
-        setJapaneseFontSize(saved.japaneseFontSize);
-        setJapaneseColor(saved.japaneseColor);
-        setTranslationStyles(saved.translationStyles);
-        setAlignment(saved.alignment);
-        setVerticalAlignment(saved.verticalAlignment);
-        setCaptionStyle(saved.captionStyle);
-        setCaptionHoldMs(saved.captionHoldMs);
+        applySettings(saved);
       }
     } catch {
       // Use defaults when storage is unavailable.
     } finally {
       setSettingsLoaded(true);
     }
-  }, []);
+  }, [applySettings]);
 
   useEffect(() => {
     if (!settingsLoaded) return;
@@ -805,7 +627,7 @@ export default function Home() {
         ),
       );
     },
-    [],
+    [setCaptionEntries],
   );
 
   useEffect(() => {
@@ -872,7 +694,7 @@ export default function Home() {
     return () => {
       for (const timer of timers) window.clearTimeout(timer);
     };
-  }, [captionEntries, captionHoldMs, showingDemo]);
+  }, [captionEntries, captionHoldMs, showingDemo, setCaptionEntries]);
 
   useEffect(() => {
     const state: SubtitleState = {
@@ -905,7 +727,7 @@ export default function Home() {
   ]);
 
   const stop = useCallback(
-    (restoreDemo = false) => {
+    (shouldRestoreDemo = false) => {
       const realtimeCostStartedAt = realtimeCostStartedAtRef.current;
       if (realtimeCostStartedAt !== null) {
         setLiveConnectionSeconds(
@@ -937,13 +759,18 @@ export default function Home() {
       setProcessingStage("idle");
       setStatus("idle");
 
-      if (restoreDemo) {
-        setCaptionEntries([demoCaptionEntry()]);
-        setShowingDemo(true);
-        setCaptionError(null);
+      if (shouldRestoreDemo) {
+        restoreDemo();
       }
     },
-    [closeRealtimeTranscription],
+    [
+      closeRealtimeTranscription,
+      restoreDemo,
+      setIsSpeaking,
+      setPendingTurns,
+      setProcessingStage,
+      setStatus,
+    ],
   );
 
   useEffect(() => () => stop(false), [stop]);
@@ -979,16 +806,7 @@ export default function Home() {
   const resetSettings = () => {
     if (isLive) return;
     const defaults = defaultSettings();
-    setTargets(defaults.targets);
-    setContext(defaults.context);
-    setSentencePauseMs(defaults.sentencePauseMs);
-    setJapaneseFontSize(defaults.japaneseFontSize);
-    setJapaneseColor(defaults.japaneseColor);
-    setTranslationStyles(defaults.translationStyles);
-    setAlignment(defaults.alignment);
-    setVerticalAlignment(defaults.verticalAlignment);
-    setCaptionStyle(defaults.captionStyle);
-    setCaptionHoldMs(defaults.captionHoldMs);
+    applySettings(defaults);
     try {
       localStorage.removeItem(SETTINGS_STORAGE_KEY);
     } catch {
