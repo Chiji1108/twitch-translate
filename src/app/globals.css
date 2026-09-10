@@ -1664,16 +1664,6 @@ footer a {
   min-width: 0;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .rendered-caption rt {
-    animation: none;
-  }
-  .caption-renderer-entry,
-  .caption-renderer-entry.is-fading {
-    transition-duration: 1ms;
-  }
-}
-
 @media (max-width: 800px) {
   .model-pill b {
     display: none;
